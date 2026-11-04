@@ -12,10 +12,8 @@
 #
 # In Docker (the image sets PP_RESTART_TO_UPDATE=1) it doesn't switch inside
 # the running container: it stops too, Docker starts the container again
-# (restart: unless-stopped), and this starts the new version. Docker Desktop
-# can lose a port's forwarding when the server is swapped inside a running
-# container (the server lists' UDP port stopped answering until the
-# container was restarted), and a container restart sets every port up afresh.
+# (restart: unless-stopped), and this starts the new version, with every
+# port set up afresh by the restart.
 here=$(cd "$(dirname "$0")" && pwd)
 server="$here/PiratesPlunder-server.x86_64"
 

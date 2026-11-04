@@ -1963,7 +1963,13 @@ func _test_server_list() -> void:
 	_check(listed.note == "" and names == ["DevMac@100.64.0.1", "Homeserver@100.64.0.2", "bshared/b@100.64.0.4", "phone@100.64.0.3"],
 		"server list: Tailscale's online machines (this one too), by name and 100.x address: %s" % str(names))
 	var off := ServerFinder.peers_from_status(JSON.stringify({"BackendState": "Stopped", "Peer": {}}))
-	_check(off.peers.is_empty() and off.note.contains("switched off"), "server list: Tailscale switched off is said so")
+	_check(off.peers.is_empty() and off.note.contains("switched off on this computer") and off.note.contains("Switch it on ("),
+		"server list: Tailscale switched off is said so, and where to switch it on: %s" % off.note)
+	var signed_out: String = ServerFinder.peers_from_status(JSON.stringify({"BackendState": "NeedsLogin"})).note
+	_check(signed_out.contains("NeedsLogin") and signed_out.contains("sign in"), "server list: Tailscale signed out is said so: %s" % signed_out)
+	var SBN: Script = load("res://scripts/server_browser.gd")
+	_check(str(SBN.no_answer_text(off.note)).contains("switched off on this computer") and str(SBN.no_answer_text("notfound")).contains("isn't installed")
+		and str(SBN.no_answer_text("")).contains("shared that machine"), "updates: Check for Updates with no answer says what Tailscale said")
 	_check(ServerFinder.peers_from_status("not json").note != "", "server list: an unreadable answer from Tailscale is said so")
 	var q := ServerFinder.query_packet()
 	_check(q.size() == ServerFinder.QUERY_SIZE and ServerFinder.is_query(q) and not ServerFinder.is_query(q.slice(0, 40)),
@@ -2674,6 +2680,10 @@ func _test_menu_update_check() -> void:
 		{"v": "99.0.0", "name": "homeserver", "machine": "homeserver", "address": "127.0.0.1:1"}], mine)
 	_check(none.kind == "none" and same.kind == "current" and str(same.text).begins_with("You're up to date"),
 		"menu updates: no servers, or none newer, and it says so")
+	var off_note := ServerFinder.tailscale_off_note("Stopped")
+	var none_off: Dictionary = MenuScript.call("check_result", [], mine, off_note)
+	_check(none_off.kind == "none" and str(none_off.text) == "No servers answered. " + off_note,
+		"menu updates: no servers with Tailscale off says Tailscale is off: %s" % none_off.text)
 	_check(newer.kind == "newer" and str(newer.server.v) == "99.0.0" and str(newer.text).begins_with("Version 99.0.0 is on homeserver"),
 		"menu updates: a newer one is offered, not fetched: %s" % newer.text)
 	GameConfig.update_from = newer.server

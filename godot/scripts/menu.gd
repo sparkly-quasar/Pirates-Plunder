@@ -30,6 +30,7 @@ var _name_edit: LineEdit = null
 var _delete_armed := -1
 var _update_box: VBoxContainer = null
 var _finder: ServerFinder = null
+var _tailscale_note := "" # what the finder's last look at Tailscale said ("" if it's running)
 var _release: ReleaseUpdate = null
 const CHECK_WAIT := 2.5
 
@@ -109,7 +110,11 @@ func show_page(which: Page) -> void:
 	# Keyboards and controllers start on the first button.
 	var first := _first_button(_pages)
 	if first != null and not Touch.enabled:
-		first.grab_focus.call_deferred()
+		# Later, so the page is laid out; by then it may have been replaced
+		# (two pages in one frame) or the menu left, so check it's still here.
+		(func() -> void:
+			if is_instance_valid(first) and first.is_inside_tree():
+				first.grab_focus()).call_deferred()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _pages != null and page != Page.HOME and event.is_action_pressed("ui_cancel"):
@@ -385,11 +390,12 @@ func _check_servers(note: String) -> void:
 	if _finder == null:
 		_finder = ServerFinder.new()
 		add_child(_finder)
+		_finder.scanned.connect(func(n: String) -> void: _tailscale_note = n)
 	_finder.scan()
 	get_tree().create_timer(CHECK_WAIT).timeout.connect(func() -> void:
 		if not is_inside_tree() or _update_box == null or not is_instance_valid(_update_box):
 			return
-		var found := check_result(_finder.servers(), GameConfig.version())
+		var found := check_result(_finder.servers(), GameConfig.version(), _tailscale_note)
 		_show_update_note(str(found.text))
 		if found.kind == "newer":
 			var s: Dictionary = found.server
@@ -397,9 +403,12 @@ func _check_servers(note: String) -> void:
 
 ## What the check found: {kind: "none" (no server answered), "current" or
 ## "newer", text, server (the one with the newest version, for "newer")}.
-static func check_result(servers: Array, mine: String) -> Dictionary:
+## `note` is what the look at Tailscale said (as ServerFinder's scanned).
+static func check_result(servers: Array, mine: String, note := "") -> Dictionary:
 	var browser: Script = load("res://scripts/server_browser.gd")
 	if servers.is_empty():
+		if note != "" and note != "notfound":
+			return {"kind": "none", "text": "No servers answered. " + note}
 		return {"kind": "none", "text": "No servers answered. Is Tailscale on, and is the server running? (Play on a Server can also look one up by its address.)"}
 	var newest: Dictionary = browser.call("update_source", servers, mine)
 	if newest.is_empty():

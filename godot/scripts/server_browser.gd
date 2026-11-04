@@ -223,7 +223,7 @@ func _look_up() -> void:
 func _redraw() -> void:
 	var servers := finder.servers()
 	var key := JSON.stringify(servers.map(func(s: Dictionary) -> Array:
-		return [s.address, s.v, s.state, s.leader, s.taken, s.open, s.crews, s.people, s.mine, s.players, s.back]))
+		return [s.address, s.v, s.state, s.leader, s.taken, s.open, s.crews, s.people, s.mine, s.players, s.back, s.get("via", "")]))
 	key += str(_busy) + str(start_panel.visible)
 	if key != _shown:
 		_shown = key
@@ -267,7 +267,9 @@ func _server_row(s: Dictionary) -> Control:
 	var head := _label("%s   " % _server_name(s), 19)
 	head.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
 	words.add_child(head)
-	var addr := _label(("version %s" % s.v) if web else "%s  ·  version %s" % [s.address, s.v], 12)
+	var addr := _label(("version %s" % s.v) if web else "%s  ·  version %s%s" % [s.address, s.v,
+		"  ·  answering over TCP only: its UDP status port isn't getting through (restarting the server usually fixes that)" if str(s.get("via", "")) == "tcp" else ""], 12)
+	addr.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	addr.modulate = Color(1, 1, 1, 0.55)
 	words.add_child(addr)
 	var line := _label(_describe(s), 14)
@@ -598,6 +600,17 @@ func _on_server_left() -> void:
 
 # --- a server with a newer version -----------------------------------------------
 
+## What Check for Updates says when no server answered, given what Tailscale
+## said (`note`, as from ServerFinder: "" if it's running, "notfound" if it
+## isn't installed, else why it can't be used).
+static func no_answer_text(note: String) -> String:
+	var text := "No servers answered, so there's nothing to check against. "
+	if note == "notfound":
+		return text + "Tailscale isn't installed here, so only a server on this computer, or one you type in above, can be found."
+	if note != "":
+		return text + note
+	return text + "Is the server running, and has its owner shared that machine with you in Tailscale? Or type its address above and try again."
+
 ## How long Check for Updates waits for servers to answer.
 const CHECK_WAIT := 2.5
 
@@ -616,7 +629,7 @@ func _finish_check() -> void:
 		return
 	var servers := finder.servers()
 	if servers.is_empty():
-		status_label.text = "No servers answered, so there's nothing to check against. Is the server running, and can this computer reach it (is Tailscale on)? Or type its address above and try again."
+		status_label.text = no_answer_text(_note)
 		return
 	var newest := update_source(servers, GameConfig.version())
 	if newest.is_empty():

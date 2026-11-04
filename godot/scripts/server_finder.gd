@@ -12,6 +12,13 @@ extends Node
 ## what it's doing: free, a game being set up, or a game under way. Addresses
 ## typed by hand are asked the same way.
 ##
+## A machine that doesn't answer over UDP is ALSO asked over TCP: a
+## WebSocket to the same port number, where servers answer browsers' lists
+## (scripts/web_status.gd). UDP can stop getting through while TCP still
+## does: Docker Desktop on a Mac once stopped forwarding a server's UDP status
+## port, though its game port and TCP ports kept working, until the container
+## was restarted. Such a server is still listed (its "via" is "tcp").
+##
 ## In a WEB BROWSER none of that is possible (no UDP, no Tailscale app to ask),
 ## and there's only one server to find anyway: the one the page came from.
 ## The browser asks it the same question over a WebSocket to its status port
@@ -43,6 +50,11 @@ const STATUS_OFFSET := 1
 ## Ask every known machine this often, and forget servers silent this long.
 const ASK_EVERY := 4.0
 const FORGET_AFTER := 13.0
+## A machine silent over UDP this long is asked over TCP too; one whose TCP
+## status port didn't take (no server there, most often) is tried again after
+## TCP_RETRY.
+const TCP_AFTER := 2.0
+const TCP_RETRY := 20.0
 
 var _udp := PacketPeerUDP.new()
 var _thread: Thread = null
@@ -51,6 +63,9 @@ var _pending := {}   # resolver id -> [text, port]
 var _servers := {}   # ip -> the last reply, as emitted
 var _ask_left := 0.0
 var _retries := 0
+var _added := {}     # ip -> when it was first asked
+var _udp_heard := {} # ip -> when it last answered over UDP
+var _tcp := {}       # ip -> {"ws": WebSocketPeer or null, "next": when to try again, "ask": when to ask next}
 ## In a browser: the page's server, {game, status, machine}, and the
 ## WebSocket asking it.
 var _web := {}
@@ -67,6 +82,9 @@ func _exit_tree() -> void:
 	_udp.close()
 	if _web_ws != null:
 		_web_ws.close()
+	for ip in _tcp:
+		if _tcp[ip].ws != null:
+			_tcp[ip].ws.close()
 
 ## Read Tailscale's list of machines (in the background) and ask each one.
 ## This computer is asked as well, at 127.0.0.1, for a server running here.
@@ -111,6 +129,8 @@ func servers() -> Array:
 
 func _add_target(ip: String, port: int, machine: String, typed: bool) -> void:
 	_targets[ip] = {"machine": machine, "port": port, "typed": typed}
+	if not _added.has(ip):
+		_added[ip] = _seconds()
 	_ask(ip)
 	_retries = 2 # a lost packet on a busy network shouldn't hide a server
 
@@ -152,29 +172,76 @@ func _process(delta: float) -> void:
 	while _udp.get_available_packet_count() > 0:
 		var packet := _udp.get_packet()
 		var ip := _udp.get_packet_ip()
-		if not _targets.has(ip):
-			continue
-		var board := parse_board_reply(packet)
-		if not board.is_empty():
-			if _servers.has(ip):
-				board_found.emit(_servers[ip], board)
-			continue
-		var reply := parse_reply(packet)
-		if reply.is_empty():
-			continue
-		var t: Dictionary = _targets[ip]
-		reply["machine"] = str(t.machine)
-		var port := int(reply.port)
-		# What to join: as typed (a name keeps working if its address changes),
-		# else the address that answered.
-		reply["address"] = str(t.machine) if t.typed else (ip if port == Net.PORT else "%s:%d" % [ip, port])
-		reply["seen"] = Time.get_ticks_msec() / 1000.0
-		_servers[ip] = reply
-		found.emit(reply)
-	var now := Time.get_ticks_msec() / 1000.0
+		if _targets.has(ip) and _take_packet(ip, packet, "udp"):
+			_udp_heard[ip] = _seconds()
+	var now := _seconds()
+	_ask_tcp(now)
 	for ip in _servers.keys():
 		if now - float(_servers[ip].seen) > FORGET_AFTER:
 			_servers.erase(ip)
+
+static func _seconds() -> float:
+	return Time.get_ticks_msec() / 1000.0
+
+## A packet from `ip`'s status port, over UDP or TCP (`via`): a Hall of Fame
+## goes to board_found, an answer to the list. True if it was one of those.
+func _take_packet(ip: String, packet: PackedByteArray, via: String) -> bool:
+	var board := parse_board_reply(packet)
+	if not board.is_empty():
+		if _servers.has(ip):
+			board_found.emit(_servers[ip], board)
+		return true
+	var reply := parse_reply(packet)
+	if reply.is_empty():
+		return false
+	var t: Dictionary = _targets[ip]
+	reply["machine"] = str(t.machine)
+	var port := int(reply.port)
+	# What to join: as typed (a name keeps working if its address changes),
+	# else the address that answered. Over TCP too: the game itself is still
+	# joined over UDP (ENet), which kept working where the status port didn't.
+	reply["address"] = str(t.machine) if t.typed else (ip if port == Net.PORT else "%s:%d" % [ip, port])
+	reply["seen"] = _seconds()
+	reply["via"] = via
+	_servers[ip] = reply
+	found.emit(reply)
+	return true
+
+## Asks over TCP the machines that have been silent over UDP for TCP_AFTER
+## (each keeps one WebSocket open while it answers, asked every ASK_EVERY),
+## and stops once UDP answers again.
+func _ask_tcp(now: float) -> void:
+	for ip in _targets:
+		if now - float(_udp_heard.get(ip, -1e9)) < FORGET_AFTER or now - float(_added.get(ip, now)) < TCP_AFTER:
+			if _tcp.has(ip):
+				if _tcp[ip].ws != null:
+					_tcp[ip].ws.close()
+				_tcp.erase(ip)
+			continue
+		if not _tcp.has(ip):
+			_tcp[ip] = {"ws": null, "next": 0.0, "ask": 0.0}
+		var t: Dictionary = _tcp[ip]
+		if t.ws == null:
+			if now < float(t.next):
+				continue
+			var ws := WebSocketPeer.new()
+			if ws.connect_to_url("ws://%s:%d" % [ip, int(_targets[ip].port) + STATUS_OFFSET]) != OK:
+				t.next = now + TCP_RETRY
+				continue
+			t.ws = ws
+			t.ask = 0.0
+		var peer: WebSocketPeer = t.ws
+		peer.poll()
+		match peer.get_ready_state():
+			WebSocketPeer.STATE_CLOSED:
+				t.ws = null
+				t.next = now + TCP_RETRY
+			WebSocketPeer.STATE_OPEN:
+				if now >= float(t.ask):
+					t.ask = now + ASK_EVERY
+					peer.send(query_packet())
+				while peer.get_available_packet_count() > 0:
+					_take_packet(ip, peer.get_packet(), "tcp")
 
 # --- in a web browser ---------------------------------------------------------
 
@@ -289,6 +356,17 @@ func _read_tailscale() -> Dictionary:
 		return {"note": "Tailscale didn't answer (is it switched on?)." if code != 0 else "Tailscale gave no list of machines."}
 	return {"note": "notfound"}
 
+## What to say when Tailscale isn't running here (`state` is its
+## BackendState). "Stopped" is the app's switch turned off: the app can still
+## be open, and a Mac can still list its Tailscale VPN as "connected", so say
+## where the switch is.
+static func tailscale_off_note(state: String) -> String:
+	var where := "Tailscale's icon in the menu bar" if OS.get_name() == "macOS" \
+		else "Tailscale's icon by the clock" if OS.get_name() == "Windows" else "`tailscale up`"
+	if state == "Stopped":
+		return "Tailscale is switched off on this computer, so it can't reach your tailnet. Switch it on (%s), then look again." % where
+	return "Tailscale isn't connected on this computer (%s): it may need you to sign in. Open it (%s), then look again." % [state, where]
+
 ## The online machines in `tailscale status --json`, this one included, as
 ## {"peers": [{"name", "ip"}], "note": "" or why there are none}. Only their
 ## Tailscale IPv4 addresses (100.64.0.0/10) are used.
@@ -298,7 +376,7 @@ static func peers_from_status(text: String) -> Dictionary:
 		return {"peers": [], "note": "Couldn't read Tailscale's list of machines."}
 	var state := str(data.get("BackendState", "Running"))
 	if state != "Running":
-		return {"peers": [], "note": "Tailscale is switched off or signed out (%s). Switch it on to see servers on your tailnet." % state}
+		return {"peers": [], "note": tailscale_off_note(state)}
 	var peers := []
 	var nodes := []
 	if data.get("Self") is Dictionary:
@@ -384,6 +462,10 @@ func ask_board(server: Dictionary) -> void:
 		return
 	for ip in _servers:
 		if str(_servers[ip].get("id", "")) == str(server.get("id", "")) and _targets.has(ip):
+			var ws: WebSocketPeer = _tcp[ip].ws if _tcp.has(ip) else null
+			if ws != null and ws.get_ready_state() == WebSocketPeer.STATE_OPEN:
+				ws.send(board_query_packet())
+				return
 			_udp.set_dest_address(ip, int(_targets[ip].port) + STATUS_OFFSET)
 			_udp.put_packet(board_query_packet())
 			return
