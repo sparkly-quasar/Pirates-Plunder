@@ -305,6 +305,12 @@ func _finish_download() -> void:
 		return
 	_install(names)
 
+## Installs files downloaded some other way (from the public releases:
+## ReleaseUpdate) into WORK_DIR, as version `version`.
+func install_files(names: Array, version: String) -> void:
+	incoming_version = version
+	_install(names)
+
 # --- serving -----------------------------------------------------------------
 
 func _on_want(peer: int, os_name: String) -> void:
@@ -464,7 +470,7 @@ func _install(names: Array) -> void:
 			DirAccess.rename_absolute(work.path_join(MAC_ZIP), ProjectSettings.globalize_path(_shared_mac_for_new()))
 		_install_windows(work.path_join(WIN_EXE))
 	else:
-		download_failed.emit("Your friend sent a version for a different computer.")
+		download_failed.emit("That download is for a different computer.")
 
 ## The Mac app arriving with a new Windows exe is that new version, so it's
 ## filed under the version we're about to become.

@@ -5,7 +5,8 @@
 #   sudo cp /opt/pirates-plunder/pirates-plunder.service /etc/systemd/system/
 #   sudo systemctl enable --now pirates-plunder
 #   journalctl -u pirates-plunder -f        # the log
-# Settings go after the "--" on the ExecStart line (see SERVER.md).
+# Settings go at the end of the ExecStart line (see SERVER.md). run.sh starts
+# the server and keeps it on the newest version (auto-update).
 [Unit]
 Description=Pirates Plunder server
 After=network-online.target
@@ -14,7 +15,7 @@ Wants=network-online.target
 [Service]
 User=pirates
 WorkingDirectory=/opt/pirates-plunder
-ExecStart=/opt/pirates-plunder/PiratesPlunder-server.x86_64 --headless -- --crews=2 --turn-seconds=180 --saves=/opt/pirates-plunder/saves
+ExecStart=/opt/pirates-plunder/run.sh --crews=2 --turn-seconds=180 --saves=/opt/pirates-plunder/saves
 Restart=on-failure
 RestartSec=5
 

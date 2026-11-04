@@ -16,7 +16,7 @@ server=$!
 sleep 3 # let it start listening
 
 player() { "$GODOT" --headless --path . res://tools/NetTest.tscn -- --role="$@"; }
-player web-wendy --player-name=Wendy --player-id=web-wendy > "$logs/web-wendy.txt" 2>&1 &
+player web-wendy --player-name=Wendy --player-id=web-wendy ${VIA:+--via=$VIA} > "$logs/web-wendy.txt" 2>&1 &
 w=$!
 player web-dan --player-name=Dan --player-id=web-dan > "$logs/web-dan.txt" 2>&1 &
 d=$!

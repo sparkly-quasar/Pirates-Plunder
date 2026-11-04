@@ -1,0 +1,26 @@
+# HTTPS in front of a Pirates Plunder server, for players on phones and in
+# web browsers (browsers only run the game on an https page). Caddy gets and
+# renews the certificate by itself.
+#
+# 1. Point a domain name at this machine (an A record), and put it below in
+#    place of play.example.com.
+# 2. Install Caddy (https://caddyserver.com/docs/install), copy this file to
+#    /etc/caddy/Caddyfile, open TCP 80 and 443, and run
+#    sudo systemctl reload caddy
+# 3. Players open https://play.example.com/
+#
+# The page loads from the server's page port (24682), then connects through
+# /ws (the game, port 24680) and /status (the server list, port 24681) on the
+# same address, as WebSockets. See "A public server, step by step" in SERVER.md.
+
+play.example.com {
+	handle_path /ws* {
+		reverse_proxy 127.0.0.1:24680
+	}
+	handle_path /status* {
+		reverse_proxy 127.0.0.1:24681
+	}
+	handle {
+		reverse_proxy 127.0.0.1:24682
+	}
+}

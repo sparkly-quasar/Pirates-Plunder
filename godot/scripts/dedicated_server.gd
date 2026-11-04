@@ -73,6 +73,9 @@ const OPTIONS := {
 	"downloads": ["", "Folder of release downloads to update older copies from: <folder>/<version>/PiratesPlunder-mac.zip and PiratesPlunder-windows.exe. Empty: the 'downloads' folder beside the server, which tools/package.sh fills."],
 	"saves": ["user://server-saves", "Folder for saved games. A match is saved at every turn and after every game, and when its players have all gone; each player's server list offers their own saved games to continue. -: keep none."],
 	"save-days": [30.0, "Saved games older than this many days are deleted. 0: kept until each player has three newer ones."],
+	"auto-update": [true, "Look for a newer version in the game's public releases on GitHub (every update-hours, and when a newer copy tries to join) and, while nobody is connected, download it, check it, and restart into it, with the same settings. Needs the server started by run.sh (Docker and systemd do). false: stay on this version."],
+	"update-hours": [1.0, "How often auto-update looks for a newer version."],
+	"updates": ["", "Folder auto-update keeps downloaded versions in. Empty: 'updates' in the saves folder (with Docker, in its volume), or user://updates when no saves are kept."],
 	"tick": [30, "Frames per second the server runs at. Turn-based, so 30 is plenty, and it spares the CPU."],
 	"once": [false, "Quit after the first match ends instead of opening a new lobby (for tests)."],
 }
@@ -107,6 +110,9 @@ var saves := ""
 var save_days := 30.0
 var tick := 30
 var once := false
+var auto_update := true
+var update_hours := 1.0
+var updates := ""
 
 ## The last few log lines, for the window when the server has one.
 var recent: Array[String] = []
@@ -260,6 +266,7 @@ func _ready() -> void:
 		_go_free()
 	else:
 		_open_lobby()
+	_start_auto_update()
 
 # --- settings ------------------------------------------------------------------
 
@@ -307,6 +314,11 @@ func _read_options() -> void:
 	save_days = maxf(_opt("save-days"), 0.0)
 	tick = clampi(_opt("tick"), 5, 120)
 	once = _opt("once")
+	auto_update = _opt("auto-update")
+	update_hours = maxf(_opt("update-hours"), 0.05)
+	updates = _opt("updates")
+	if updates == "":
+		updates = (saves if saves != "" else "user://").path_join("updates")
 
 ## The downloads folder tools/package.sh puts beside the server build (or, run
 ## from source, in godot/build/server/), if there is one.
@@ -571,6 +583,9 @@ func _on_versions_differ(id: int, version: String, newer: bool, _can_get: bool) 
 	var why: String
 	if newer:
 		why = "This server runs version %s, older than yours (%s). It needs updating before you can play here." % [mine, version]
+		if _updating_enabled():
+			why = "This server runs version %s, older than yours (%s). It's updating itself: try again in a few minutes." % [mine, version]
+			_check_releases_soon()
 	else:
 		why = "This server runs version %s and you have %s. Download version %s to play here." % [mine, version, mine]
 	_kick(id, why)
@@ -683,6 +698,7 @@ func _on_guest_returned(team: int) -> void:
 func _process(delta: float) -> void:
 	var now := _now()
 	_answer_lists()
+	_auto_update_tick(now)
 	if not Net.match_started:
 		_lobby_clocks(now, delta)
 	_stragglers(now)
@@ -915,6 +931,191 @@ func _kick(id: int, why: String) -> void:
 
 func _now() -> float:
 	return Time.get_ticks_msec() / 1000.0
+
+# --- auto-update -----------------------------------------------------------------
+#
+# The server keeps itself on the newest release: it asks GitHub
+# (ReleaseUpdate) every update-hours, downloads the server package when
+# there's a newer one, checks it against the release's SHA256SUMS.txt, and
+# unpacks it into <updates>/<version>/. Once nobody is connected, it hands
+# over: writes the new server's path to the file run.sh named in PP_LAUNCHER
+# and quits with RESTART_CODE, and run.sh starts the new one with the same
+# settings. The new package has that version's Mac and Windows downloads and
+# web version, so players then catch up from it as usual.
+#
+# A restart starts the server run.sh came with, which hands over at once to
+# the newest version already unpacked. A version that never got going after
+# a handover (no STARTED mark) isn't handed to again.
+
+const RESTART_CODE := 75
+const READY_MARK := "READY"       # unpacked and checked
+const TRIED_MARK := "HANDED_OVER" # a server handed over to it
+const STARTED_MARK := "STARTED"   # and it got going
+
+var _releases: Node = null
+var _next_check := 0.0
+var _ready_dir := ""      # an unpacked newer version waiting for the server to be free
+var _ready_version := ""
+var _fetching := ""       # the version being downloaded
+
+func _updating_enabled() -> bool:
+	return auto_update and OS.get_environment("PP_LAUNCHER") != ""
+
+func _start_auto_update() -> void:
+	var mine_dir := _own_update_dir()
+	if mine_dir != "":
+		# This is a version auto-update unpacked: it got going. Tidy away the rest.
+		FileAccess.open(mine_dir.path_join(STARTED_MARK), FileAccess.WRITE)
+		_prune_updates(mine_dir)
+	if not auto_update:
+		_log("Auto-update is off: staying on version %s." % GameConfig.version())
+		return
+	if OS.get_environment("PP_LAUNCHER") == "":
+		_log("Auto-update needs the server started by run.sh (as Docker and systemd do), so it only says when a newer version is out.")
+	var waiting := _newest_unpacked()
+	if not waiting.is_empty():
+		_ready_dir = str(waiting.dir)
+		_ready_version = str(waiting.version)
+		_log("Version %s is already downloaded; switching to it while nobody is here." % _ready_version)
+	_releases = preload("res://scripts/release_update.gd").new()
+	_releases.name = "Releases"
+	var test_api := OS.get_environment("PP_TEST_RELEASES") # tests: a stand-in for GitHub
+	if test_api != "":
+		_releases.api_url = test_api + "/api/latest"
+		_releases.page_url = test_api + "/releases/latest"
+		_releases.download_base = test_api + "/releases/download/"
+	_releases.file_override = _releases.SERVER_FILE
+	_releases.install = false
+	_releases.work_dir = ProjectSettings.globalize_path(updates.path_join("downloading"))
+	add_child(_releases)
+	_releases.checked.connect(_on_releases_checked)
+	_releases.downloaded.connect(_on_release_downloaded)
+	_releases.failed.connect(func(why: String) -> void:
+		_fetching = ""
+		_log("Auto-update: %s" % why))
+	_next_check = _now() + 5.0
+	_log("Auto-update: looks for a newer version on GitHub every %s." % ("hour" if is_equal_approx(update_hours, 1.0) else "%s hours" % str(snappedf(update_hours, 0.01))))
+
+func _check_releases_soon() -> void:
+	if _releases != null and _fetching == "" and _ready_dir == "":
+		_next_check = minf(_next_check, _now() + 2.0)
+
+func _auto_update_tick(now: float) -> void:
+	if _releases == null:
+		return
+	if _ready_dir != "" and _free_for_update():
+		_hand_over()
+		return
+	if now >= _next_check and _fetching == "" and _ready_dir == "" and not _releases.busy():
+		_next_check = now + update_hours * 3600.0
+		_releases.check()
+
+## Nobody connected and no match running: nobody to interrupt.
+func _free_for_update() -> bool:
+	return multiplayer.get_peers().is_empty() and not Net.match_started and _updating_enabled()
+
+func _on_releases_checked(found: Dictionary) -> void:
+	match str(found.kind):
+		"newer":
+			if not _updating_enabled():
+				_log("Version %s is out (this server runs %s). Update it by hand, or start it with run.sh to update by itself." % [found.version, GameConfig.version()])
+				return
+			if not _releases.can_install(found):
+				_log("Auto-update: version %s is out, but its release has no server package." % found.version)
+				return
+			_fetching = str(found.version)
+			_log("Auto-update: version %s is out; downloading it." % _fetching)
+			_releases.download(found)
+		"current":
+			pass
+		_:
+			_log("Auto-update: %s Trying again later." % found.text)
+
+## Downloaded and checked: unpack it beside the others, then wait to be free.
+func _on_release_downloaded(path: String) -> void:
+	var version := _fetching
+	_fetching = ""
+	var root := ProjectSettings.globalize_path(updates)
+	var dir := root.path_join(version)
+	var partial := dir + ".partial"
+	_remove_tree(partial)
+	DirAccess.make_dir_recursive_absolute(partial)
+	var out := []
+	if OS.execute("tar", ["-xzf", path, "-C", partial], out, true) != 0:
+		_log("Auto-update: couldn't unpack version %s: %s" % [version, "".join(out).strip_edges()])
+		return
+	DirAccess.remove_absolute(path)
+	var server := partial.path_join("server/PiratesPlunder-server.x86_64")
+	var said := FileAccess.get_file_as_string(partial.path_join("server/VERSION")).strip_edges()
+	if not FileAccess.file_exists(server) or said != version:
+		_log("Auto-update: the version %s package wasn't as expected (it says %s); not using it." % [version, said])
+		_remove_tree(partial)
+		return
+	_remove_tree(dir)
+	DirAccess.rename_absolute(partial, dir)
+	FileAccess.open(dir.path_join(READY_MARK), FileAccess.WRITE)
+	_ready_dir = dir
+	_ready_version = version
+	_log("Auto-update: version %s is ready; switching to it once nobody is playing." % version)
+
+func _hand_over() -> void:
+	var server := _ready_dir.path_join("server/PiratesPlunder-server.x86_64")
+	var note := FileAccess.open(OS.get_environment("PP_LAUNCHER"), FileAccess.WRITE)
+	if note == null:
+		_log("Auto-update: couldn't tell run.sh about version %s; staying on %s." % [_ready_version, GameConfig.version()])
+		_ready_dir = ""
+		return
+	note.store_string(server)
+	note.close()
+	FileAccess.open(_ready_dir.path_join(TRIED_MARK), FileAccess.WRITE)
+	_log("Auto-update: nobody is here, so restarting into version %s." % _ready_version)
+	_ready_dir = ""
+	set_process(false)
+	get_tree().quit(RESTART_CODE)
+
+## The newest version already unpacked in the updates folder that's newer
+## than this one and hasn't failed before: {dir, version}, or {}.
+func _newest_unpacked() -> Dictionary:
+	var root := ProjectSettings.globalize_path(updates)
+	var best := {}
+	if not DirAccess.dir_exists_absolute(root):
+		return best
+	for v in DirAccess.get_directories_at(root):
+		var dir := root.path_join(v)
+		if not FileAccess.file_exists(dir.path_join(READY_MARK)):
+			continue
+		if FileAccess.file_exists(dir.path_join(TRIED_MARK)) and not FileAccess.file_exists(dir.path_join(STARTED_MARK)):
+			continue # it was tried and never got going
+		if Updater.compare(v, GameConfig.version()) <= 0:
+			continue
+		if best.is_empty() or Updater.compare(v, str(best.version)) > 0:
+			best = {"dir": dir, "version": v}
+	return best
+
+## <updates>/<version>/ if this server is one auto-update unpacked, else "".
+func _own_update_dir() -> String:
+	if not OS.has_feature("template"):
+		return ""
+	var dir := OS.get_executable_path().get_base_dir().get_base_dir() # <updates>/<version>/server/..
+	var root := ProjectSettings.globalize_path(updates).simplify_path()
+	return dir if dir.get_base_dir().simplify_path() == root else ""
+
+## Removes every other version from the updates folder, keeping `keep`.
+func _prune_updates(keep: String) -> void:
+	var root := keep.get_base_dir()
+	for v in DirAccess.get_directories_at(root):
+		var dir := root.path_join(v)
+		if dir != keep:
+			_remove_tree(dir)
+
+## Deletes a folder auto-update made, and everything in it (rm -rf, which
+## doesn't follow links out of it). Only ever inside the updates folder.
+func _remove_tree(path: String) -> void:
+	var root := ProjectSettings.globalize_path(updates).simplify_path()
+	var target := path.simplify_path()
+	if not target.begins_with(root + "/") or not DirAccess.dir_exists_absolute(target):
+		return
+	OS.execute("rm", ["-rf", target])
 
 func _log(line: String) -> void:
 	var stamped := "[%s] %s" % [Time.get_datetime_string_from_system(true, true), line]

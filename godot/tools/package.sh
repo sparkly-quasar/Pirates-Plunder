@@ -7,7 +7,10 @@
 #                               above inside so it can update older copies,
 #                               and the web version it hands to browsers
 #                               (also unpacked in build/server/; SERVER.md)
-#   SHA256SUMS.txt              fingerprints of all three, for the release page
+#   PiratesPlunder-mac.zip      the Mac app zipped, for copies that update
+#                               themselves from the public releases
+#   SHA256SUMS.txt              fingerprints of all four, for the release page
+#                               (and for those updates to check against)
 # Run from the godot/ folder, best on a Mac (hdiutil makes a compressed disk
 # image). On Linux it makes the same files, but the disk image is a plain
 # ISO 9660 one (genisoimage) that macOS opens like any other. Needs Godot's
@@ -51,7 +54,7 @@ if [ "${SKIP_TEMPLATE_CHECK:-0}" != "1" ]; then
 fi
 
 rm -rf build/stage build/server build/PiratesPlunder-macos.dmg build/PiratesPlunder-windows.exe \
-	build/PiratesPlunder-server-linux.tar.gz build/SHA256SUMS.txt dist
+	build/PiratesPlunder-server-linux.tar.gz build/PiratesPlunder-mac.zip build/SHA256SUMS.txt dist
 mkdir -p build/stage/mac dist/windows dist/mac
 
 echo "Exporting version $version..."
@@ -106,7 +109,8 @@ for f in index.wasm index.pck index.js; do gzip -9 -k -f "build/server/web/$f"; 
 # What a phone shows when the page is saved to its home screen.
 web_icons="apple-touch-icon.png icon-192.png icon-512.png icon-maskable-512.png manifest.webmanifest"
 for f in $web_icons; do need "web_shell/$f"; cp "web_shell/$f" build/server/web/; done
-cp ../server/Dockerfile ../server/docker-compose.yml ../server/pirates-plunder.service SERVER.md build/server/
+cp ../server/Dockerfile ../server/docker-compose.yml ../server/pirates-plunder.service ../server/Caddyfile ../server/run.sh SERVER.md build/server/
+chmod 0755 build/server/run.sh
 echo "$version" > build/server/VERSION
 COPYFILE_DISABLE=1 tar -C build -czf build/PiratesPlunder-server-linux.tar.gz server
 need build/PiratesPlunder-server-linux.tar.gz
@@ -117,16 +121,18 @@ for f in server/PiratesPlunder-server.x86_64 "server/downloads/$version/PiratesP
 		"server/downloads/$version/PiratesPlunder-windows.exe" server/web/index.html server/web/index.wasm.gz \
 		server/web/apple-touch-icon.png server/web/manifest.webmanifest \
 		server/Dockerfile server/docker-compose.yml \
-		server/pirates-plunder.service server/VERSION; do
+		server/pirates-plunder.service server/Caddyfile server/run.sh server/VERSION; do
 	grep -qxF "$f" <<< "$listing" || fail "the server package is missing $f"
 done
 
 # Fingerprints for the release page, so anyone can check a download.
 sha256() { if command -v shasum > /dev/null; then shasum -a 256 "$@"; else sha256sum "$@"; fi; }
+# The Mac app zipped, for copies updating from the public releases (ReleaseUpdate).
+cp dist/mac/PiratesPlunder-mac.zip build/PiratesPlunder-mac.zip
 (cd build && sha256 PiratesPlunder-macos.dmg PiratesPlunder-windows.exe \
-	PiratesPlunder-server-linux.tar.gz > SHA256SUMS.txt)
+	PiratesPlunder-server-linux.tar.gz PiratesPlunder-mac.zip > SHA256SUMS.txt)
 
 echo
 echo "Version $version is ready. Attach these to the release:"
 ls -lh build/PiratesPlunder-macos.dmg build/PiratesPlunder-windows.exe \
-	build/PiratesPlunder-server-linux.tar.gz build/SHA256SUMS.txt
+	build/PiratesPlunder-server-linux.tar.gz build/PiratesPlunder-mac.zip build/SHA256SUMS.txt

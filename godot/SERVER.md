@@ -128,6 +128,9 @@ suits Docker. A value on the command line wins over the environment.
 | `downloads` | (beside it) | A folder of release downloads, so older copies can update themselves from the server. By default, the `downloads` folder next to the server, which `package.sh` fills. See below. |
 | `saves` | user://server-saves | The folder for saved games (see Saved games, below); `-` keeps none. Run from source, `user://` is Godot's data folder for the game (on Linux `~/.local/share/godot/app_userdata/Pirates Plunder/`). |
 | `save-days` | 30 | Saved games older than this many days are deleted. 0 keeps them until each of their players has three newer ones. |
+| `auto-update` | true | Keep the server on the newest version by itself: it looks in the game's public releases on GitHub every `update-hours` (and as soon as a newer copy tries to join), downloads a newer server package, checks it against the release's fingerprints, and once nobody is connected, restarts into it with the same settings. Needs the server started by `run.sh`, as the Docker image and `pirates-plunder.service` do. `false` stays on this version. See How updating works. |
+| `update-hours` | 1 | How often auto-update looks for a newer version. |
+| `updates` | (in saves) | Where auto-update keeps the versions it downloads (about 330 MB each; it keeps only the one it's running). By default `updates` inside the saves folder, so Docker's volume keeps it. |
 | `tick` | 30 | Frames per second. The game is turn-based, so 30 is plenty and keeps CPU use low. |
 | `once` | false | Quit when the first match ends instead of opening a new lobby. The tests use this. |
 
@@ -167,7 +170,9 @@ package's `docker-compose.yml` says so (`platform: linux/amd64`) from
 otherwise you get an arm64 image and the server restarts over and over
 (Rosetta's "failed to open elf" in the log).
 
-To **update**, put the new package in a fresh `server` folder rather than
+The server **updates itself** from the game's public releases (see How
+updating works). To update it by hand instead (or to pick up a changed
+`Dockerfile` or `docker-compose.yml`), put the new package in a fresh `server` folder rather than
 unpacking it over the old one. Unpacking over it leaves every older
 version's `downloads/<version>/` behind (about 300 MB each), and the image
 copies them all in. From the folder that holds `server`:
@@ -188,12 +193,13 @@ saved games.
 **With systemd**, no Docker: follow the steps at the top of
 `pirates-plunder.service`.
 
-**By hand**, to try it: `./PiratesPlunder-server.x86_64 --headless -- --crews=4`.
+**By hand**, to try it: `./run.sh --crews=4` (or
+`./PiratesPlunder-server.x86_64 --headless -- --crews=4`, which doesn't
+update itself).
 
-**Updating** means building a new package, unpacking it in place of the
-old one (with Docker, see above: a fresh folder, not over the old one), and
-restarting. Players then catch up by themselves the
-next time they connect.
+**Updating by hand** means a new package unpacked in place of the old one
+(with Docker, see above: a fresh folder, not over the old one), and a
+restart. Usually there's no need: the server updates itself.
 
 ### Straight from the source, without a Mac build
 
@@ -219,7 +225,8 @@ The game uses **UDP** (Godot's ENet), so the host must accept UDP traffic.
 Services that only forward web traffic (Heroku and its kind) won't work.
 
 - **A small VPS** (Hetzner, DigitalOcean, Linode, Vultr: about $5 a month)
-  is the simplest choice. Install Docker, run the commands above, and open
+  is the simplest choice (step by step, with HTTPS for phones: [A public
+  server, step by step](#a-public-server-step-by-step)). Install Docker, run the commands above, and open
   the ports in the firewall: `sudo ufw allow 24680:24681/udp` (and
   `sudo ufw allow 24680:24682/tcp` for players in a web browser). Some providers also
   have their own firewall in the web console. Players type the VPS's IP
@@ -236,6 +243,112 @@ Services that only forward web traffic (Heroku and its kind) won't work.
 
 Players type the address as `host` or `host:port`, and a domain name works
 as well as an IP address.
+
+## A public server, step by step
+
+For a server anyone on the internet can play on, not only friends on your
+tailnet. About half an hour, and about $5 a month for the machine.
+
+**Before you share the address widely**, know what an open server means
+today:
+
+- **Anyone with the address can join** and start games. There are no
+  accounts or passwords, players choose their own names, and there's no
+  kick or ban yet.
+- **Chat isn't moderated**, and desktop traffic isn't encrypted (browser
+  players behind HTTPS are).
+- **A modified copy could see through the fog**: the server sends every
+  sailor's position and each copy hides what its crew can't see.
+- **Older copies update themselves from your server**, about 110 to 210 MB
+  each, which counts against the machine's bandwidth allowance.
+
+That's fine for a community of people you're glad to play with. It's worth
+knowing before posting the address somewhere busy.
+
+**1. A machine.** Any small Linux VPS (Hetzner, DigitalOcean, Linode,
+Vultr) with an **x86_64** processor; 1 GB of memory is plenty. These steps
+assume Ubuntu. For phone and browser players you also need a **domain
+name** pointed at the machine (an A record, say `play.example.com`):
+browsers only run the game on an https page, and a certificate needs a name.
+
+**2. Docker.** Logged in to the machine:
+
+```sh
+curl -fsSL https://get.docker.com | sudo sh
+```
+
+**3. The server.** Download the latest release, check it against its
+fingerprint, and unpack it:
+
+```sh
+curl -LO https://github.com/sparkly-quasar/Pirates-Plunder/releases/latest/download/PiratesPlunder-server-linux.tar.gz
+curl -LO https://github.com/sparkly-quasar/Pirates-Plunder/releases/latest/download/SHA256SUMS.txt
+sha256sum --ignore-missing -c SHA256SUMS.txt     # should say: OK
+tar -xzf PiratesPlunder-server-linux.tar.gz && cd server
+```
+
+**4. Its name and settings.** Open `docker-compose.yml` and give it a name
+for players' server lists (`PP_NAME: "Your Server"`; without one they see
+its address). The other settings are explained beside them and in
+[Settings](#settings). If you'll set up HTTPS (step 7), also change the
+three `/tcp` lines under `ports` so only Caddy can reach them:
+
+```yaml
+      - "127.0.0.1:24680:24680/tcp"
+      - "127.0.0.1:24681:24681/tcp"
+      - "127.0.0.1:24682:24682/tcp"
+```
+
+(Ports Docker publishes skip the firewall, so this is what keeps them
+private.)
+
+**5. Start it.**
+
+```sh
+sudo docker compose up -d --build
+sudo docker compose logs --tail 20     # its version, its name, and the ports it listens on
+```
+
+It starts again by itself after a reboot, and keeps saved games and the
+Hall of Fame in a Docker volume.
+
+**6. Open the game's ports.** Desktop players connect over UDP:
+
+```sh
+sudo ufw allow OpenSSH
+sudo ufw allow 24680:24681/udp
+sudo ufw enable
+```
+
+Some providers also have a firewall of their own in their web console:
+open UDP 24680 and 24681 there too. Desktop players can now choose **Play
+on a Server** and type `play.example.com` (or the machine's IP address).
+
+**7. HTTPS for phones and browsers.** Install Caddy
+([caddyserver.com/docs/install](https://caddyserver.com/docs/install)),
+then put the package's `Caddyfile` in place with your domain name in it:
+
+```sh
+sudo cp Caddyfile /etc/caddy/Caddyfile
+sudo sed -i 's/play.example.com/YOUR.DOMAIN/' /etc/caddy/Caddyfile
+sudo ufw allow 80,443/tcp
+sudo systemctl reload caddy
+```
+
+Caddy gets the certificate by itself. Players open
+**`https://YOUR.DOMAIN/`** on a phone or in any browser, and play alongside
+the desktop copies. (`tools/caddy_test.sh` checks this Caddyfile with the
+browser test.)
+
+**8. Updating** happens by itself: the server checks GitHub every hour and
+switches to a new version while nobody is playing (see [How updating
+works](#how-updating-works)). Players' copies catch up from it the next
+time they connect. The only time you need to do anything is when a release
+note says the Docker setup itself changed: then download the new package as
+in step 3 and follow [the update steps above](#put-it-on-a-server).
+
+**9. Tell people.** Share the address. A server outside their tailnet
+isn't listed by itself; players type it once under **Play on a Server**.
 
 ## How the server list asks
 
@@ -377,6 +490,33 @@ minute after the last round the server thanks everyone and opens up again.
 
 ## How updating works
 
+**The server keeps itself up to date** (`auto-update`, on by default).
+Every hour, and as soon as a copy newer than the server tries to join, it
+asks the game's public releases on GitHub for the latest version. If
+there's a newer one, it downloads the server package, checks it against the
+release's `SHA256SUMS.txt`, and unpacks it into `saves/updates/<version>/`.
+It waits until nobody is connected and no match is running, then restarts
+into the new version with the same settings. A match in progress is never
+interrupted, and the new package carries that version's Mac and Windows
+downloads and web version, so players then catch up from the server as
+before. The log says each step (`Auto-update: ...`).
+
+This works through `run.sh`, which starts the server and switches to the
+new version when it asks. The Docker image and `pirates-plunder.service`
+both start the server that way. A restart starts the version the package came with,
+which switches at once to the newest one already downloaded. If a new
+version fails to start, the server doesn't switch to it again and carries
+on with the version it has. To stay on one version, set `auto-update=false`
+(`PP_AUTO_UPDATE: "false"`).
+
+**Check for Updates** on the main menu asks the game's public releases on
+GitHub for the latest version. If it's newer, it offers to update: the game
+downloads this computer's file from the release (the Mac app zipped, or the
+Windows exe), checks it against the release's `SHA256SUMS.txt`, installs it
+and restarts. If GitHub can't be reached, it asks the servers on your
+tailnet instead. On a computer it can't update by itself (Linux, say), it
+offers the releases page.
+
 **Check for Updates** on the Play on a Server screen asks the servers it
 finds for their version and, if one is newer, updates from it straight
 away (connecting only for that, not to play), then comes back to the list.
@@ -445,7 +585,4 @@ friends.
   server should stop sending what a crew can't see.
 - **Rooms, spectators, and joining a match in progress.** One game and one
   campaign per server; run more servers on other ports for more.
-- **Going public** still waits on replacing the placeholder sounds, because
-  everyone who plays needs a copy of the game
-  ([PLACEHOLDER_ASSETS.md](PLACEHOLDER_ASSETS.md)). A server for friends is
-  fine before then.
+- **Kicking, banning or moderating chat** on a public server.

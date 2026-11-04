@@ -16,15 +16,18 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --create-home --uid 10001 pirate
 WORKDIR /srv/pirates
-COPY --chown=pirate:pirate PiratesPlunder-server.x86_64 ./
+COPY --chown=pirate:pirate PiratesPlunder-server.x86_64 run.sh ./
 COPY --chown=pirate:pirate downloads/ ./downloads/
 COPY --chown=pirate:pirate web/ ./web/
 # The saves folder belongs to pirate, and Docker copies that owner into a
 # new, empty volume mounted there (docker-compose.yml's "saves"). Without it
 # the volume belongs to root and the server can't write a single save.
-RUN chmod 0755 PiratesPlunder-server.x86_64 \
+RUN chmod 0755 PiratesPlunder-server.x86_64 run.sh \
  && mkdir saves \
  && chown pirate:pirate saves
 USER pirate
 EXPOSE 24680/udp 24681/udp 24680/tcp 24681/tcp 24682/tcp
-ENTRYPOINT ["/usr/bin/tini", "--", "/srv/pirates/PiratesPlunder-server.x86_64", "--headless", "--"]
+# run.sh starts the server and keeps it on the newest version: auto-update
+# downloads new versions into the saves volume (saves/updates) and run.sh
+# switches to them. tini -g passes a stop on to the server as well.
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/srv/pirates/run.sh"]

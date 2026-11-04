@@ -29,6 +29,7 @@ services:
       PP_DIFFICULTY: "normal"  # the computer's crews: easy, normal or hard
       PP_TURN_SECONDS: "180"   # a new game's turn limit, which players starting one can change (0 = no limit)
       PP_REJOIN_SECONDS: "120" # a player lost their connection: wait this long before asking the others what to do
+      PP_AUTO_UPDATE: "true"   # look for a newer version on GitHub every hour and switch to it while nobody is playing (false: stay put)
       PP_SAVES: "/srv/pirates/saves" # campaigns kept here (the volume below keeps them across updates)
     volumes:
       - saves:/srv/pirates/saves

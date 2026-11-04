@@ -43,6 +43,12 @@ func _wendy() -> void:
 	u =ServerFinder.urls_for_page("http://localhost:8060/index.html?server=127.0.0.1%3A" + str(PORT))
 	_check(u.game == "ws://" + ADDRESS and u.status == "ws://127.0.0.1:%d" % (PORT + 1),
 		"wendy: ?server= points it at a server's own ports: %s" % str(u))
+	# Through a web server in front (tools/caddy_test.sh): its /ws and /status.
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--via="):
+			var via := a.trim_prefix("--via=")
+			u = {"game": via + "/ws", "status": via + "/status", "machine": "127.0.0.1"}
+			print("  (through %s)" % via)
 	finder.watch_web(u)
 	var s := await _status_until(func(x: Dictionary) -> bool: return true)
 	_check(s.state == "free" and s.v == GameConfig.version() and s.address == u.game,

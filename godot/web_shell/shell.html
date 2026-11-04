@@ -17,7 +17,7 @@
 -->
 	<head>
 		<meta charset="utf-8">
-		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0">
 		<meta name="theme-color" content="#121a24">
 		<meta name="apple-mobile-web-app-title" content="Pirates Plunder">
 		<meta name="application-name" content="Pirates Plunder">
@@ -36,6 +36,28 @@ html, body {
 	background: #121a24;
 	color: #f2ead8;
 	height: 100%;
+}
+
+/* Pinned to the screen: an iPhone scrolls the page to show the text box when
+   its keyboard opens and doesn't always scroll back, which left the bottom of
+   the game (the touch bar's buttons) off the screen. */
+html, body {
+	position: fixed;
+	inset: 0;
+	overflow: hidden;
+	overscroll-behavior: none;
+}
+
+#canvas {
+	position: fixed;
+	top: 0;
+	left: 0;
+}
+
+/* Godot's hidden text box for the phone keyboard: at 16px an iPhone doesn't
+   zoom the page in when it gets the focus. */
+input, textarea {
+	font-size: 16px !important;
 }
 
 body {
@@ -205,6 +227,27 @@ body {
 
 		<script src="$GODOT_URL"></script>
 		<script>
+// Keep the page where it belongs: scrolled to the top, at its own size. An
+// iPhone moves it to show the keyboard's text box and can leave it there
+// once the keyboard closes (see the CSS above).
+(function () {
+	function settle() {
+		if (window.scrollX !== 0 || window.scrollY !== 0) {
+			window.scrollTo(0, 0);
+		}
+	}
+	window.addEventListener('scroll', settle, { passive: true });
+	window.addEventListener('focusout', function () {
+		setTimeout(settle, 50);
+		setTimeout(settle, 400);
+	});
+	if (window.visualViewport) {
+		window.visualViewport.addEventListener('resize', function () {
+			setTimeout(settle, 50);
+		});
+	}
+})();
+
 const GODOT_CONFIG = $GODOT_CONFIG;
 const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 

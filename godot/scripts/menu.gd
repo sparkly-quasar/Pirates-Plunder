@@ -30,6 +30,7 @@ var _name_edit: LineEdit = null
 var _delete_armed := -1
 var _update_box: VBoxContainer = null
 var _finder: ServerFinder = null
+var _release: ReleaseUpdate = null
 const CHECK_WAIT := 2.5
 
 func _ready() -> void:
@@ -155,7 +156,7 @@ func _home_page() -> void:
 		func() -> void: show_page(Page.SETTINGS)))
 	if not _web(): # a web page always loads the server's version
 		_pages.add_child(_menu_button("Check for Updates",
-			"Ask the servers on your tailnet whether there's a newer version of the game, and update to it.", true,
+			"See whether there's a newer version of the game, and update to it.", true,
 			_check_for_updates))
 		_update_box = VBoxContainer.new()
 		_update_box.name = "UpdateCheck"
@@ -304,13 +305,83 @@ func _royale_page() -> void:
 				get_tree().change_scene_to_file("res://scenes/Lobby.tscn")))
 	_add_back()
 
-## Check for Updates: look for the servers on the tailnet (as the server list
-## does), wait a moment for their answers, then say what was found. A newer
-## version is offered, not fetched until the player says so.
+## Check for Updates: ask the game's public releases on GitHub for the
+## latest version (ReleaseUpdate). Newer: offer it, and download, check and
+## install it if the player says so. If GitHub can't be reached, ask the
+## servers on the tailnet instead (_check_servers).
 func _check_for_updates() -> void:
 	if _update_box == null:
 		return
-	_show_update_note("Checking the servers on your tailnet for a newer version...")
+	if _release == null:
+		_release = ReleaseUpdate.new()
+		_release.name = "ReleaseUpdate"
+		add_child(_release)
+		_release.checked.connect(_on_release_checked)
+		_release.progress.connect(_on_release_progress)
+		_release.failed.connect(func(reason: String) -> void:
+			_on_release_failed(reason)
+			if _update_box != null and is_instance_valid(_update_box):
+				_offer_update("Open the Releases Page", func() -> void: OS.shell_open(ReleaseUpdate.PAGE)))
+		_release.installing.connect(_show_update_note)
+		Net.updater.download_failed.connect(_on_release_failed)
+		Net.updater.installing.connect(_show_update_note)
+	if _release.busy():
+		return
+	_show_update_note("Checking for a newer version...")
+	_release.check()
+
+func _on_release_checked(result: Dictionary) -> void:
+	if not is_inside_tree() or _update_box == null or not is_instance_valid(_update_box):
+		return
+	match str(result.kind):
+		"newer":
+			if _release.can_install(result):
+				_show_update_note("%s Update now? The game downloads it, checks it, and restarts." % result.text)
+				_offer_update("Update Now", func() -> void:
+					_show_update_note("Downloading version %s..." % result.version)
+					_release.download(result))
+			else:
+				_show_update_note("%s Download it from the releases page." % result.text)
+				_offer_update("Open the Releases Page", func() -> void: OS.shell_open(str(result.page)))
+		"current":
+			_show_update_note(str(result.text))
+		_:
+			_check_servers("%s Asking the servers on your tailnet instead..." % result.text)
+
+## Update Now (or another way to get it) and Not Now, under the note.
+func _offer_update(label: String, act: Callable) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var go := Button.new()
+	go.name = "UpdateNow"
+	go.text = label
+	go.custom_minimum_size = Vector2(0, 40)
+	go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	go.pressed.connect(act)
+	row.add_child(go)
+	var later := Button.new()
+	later.text = "Not Now"
+	later.custom_minimum_size = Vector2(120, 40)
+	later.pressed.connect(func() -> void: _show_update_note(""))
+	row.add_child(later)
+	_update_box.add_child(row)
+
+func _on_release_progress(done: int, total: int) -> void:
+	if _update_box == null or not is_instance_valid(_update_box) or _update_box.get_child_count() == 0:
+		return
+	var l := _update_box.get_child(0) as Label
+	if l != null:
+		l.text = "Downloading... %d MB%s" % [done >> 20, (" of %d MB" % (total >> 20)) if total > 0 else ""]
+
+func _on_release_failed(reason: String) -> void:
+	if _update_box != null and is_instance_valid(_update_box):
+		_show_update_note(reason)
+
+## The servers on the tailnet (as the server list finds them): wait a moment
+## for their answers, then say what was found. A newer version is offered,
+## not fetched until the player says so.
+func _check_servers(note: String) -> void:
+	_show_update_note(note)
 	if _finder == null:
 		_finder = ServerFinder.new()
 		add_child(_finder)
@@ -322,21 +393,7 @@ func _check_for_updates() -> void:
 		_show_update_note(str(found.text))
 		if found.kind == "newer":
 			var s: Dictionary = found.server
-			var row := HBoxContainer.new()
-			row.add_theme_constant_override("separation", 8)
-			var go := Button.new()
-			go.name = "UpdateNow"
-			go.text = "Update Now"
-			go.custom_minimum_size = Vector2(0, 40)
-			go.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			go.pressed.connect(func() -> void: _update_now(s))
-			row.add_child(go)
-			var later := Button.new()
-			later.text = "Not Now"
-			later.custom_minimum_size = Vector2(120, 40)
-			later.pressed.connect(func() -> void: _show_update_note(""))
-			row.add_child(later)
-			_update_box.add_child(row))
+			_offer_update("Update Now", func() -> void: _update_now(s)))
 
 ## What the check found: {kind: "none" (no server answered), "current" or
 ## "newer", text, server (the one with the newest version, for "newer")}.

@@ -2688,6 +2688,42 @@ func _test_menu_update_check() -> void:
 	browser.queue_free()
 	await _frames(2)
 
+	# From the public releases on GitHub.
+	var RU: Script = load("res://scripts/release_update.gd")
+	var rel := {"tag_name": "v99.1.0", "html_url": "https://example.invalid/r",
+		"assets": [{"name": "PiratesPlunder-mac.zip", "browser_download_url": "https://example.invalid/m"},
+			{"name": "PiratesPlunder-windows.exe", "browser_download_url": "https://example.invalid/w"},
+			{"name": "SHA256SUMS.txt", "browser_download_url": "https://example.invalid/s"}]}
+	var got: Dictionary = RU.call("parse_release", rel, mine)
+	_check(got.kind == "newer" and got.version == "99.1.0" and got.files.size() == 3, "releases: a newer release is spotted: %s" % got.get("text", ""))
+	rel.tag_name = "v" + mine
+	_check(RU.call("parse_release", rel, mine).kind == "current", "releases: the same version is up to date")
+	_check(RU.call("parse_release", {"message": "Not Found"}, mine).kind == "error", "releases: a strange answer is an error, not an update")
+	var sums := "%s  PiratesPlunder-macos.dmg\n%s  PiratesPlunder-mac.zip\n" % ["a".repeat(64), "B".repeat(64)]
+	_check(RU.call("sum_for", sums, "PiratesPlunder-mac.zip") == "b".repeat(64) and RU.call("sum_for", sums, "PiratesPlunder-windows.exe") == "",
+		"releases: the right fingerprint is found in SHA256SUMS.txt")
+	_check(RU.call("file_for", "macOS") == "PiratesPlunder-mac.zip" and RU.call("file_for", "Windows") == "PiratesPlunder-windows.exe" and RU.call("file_for", "Linux") == "",
+		"releases: each computer installs its own file")
+	MenuScript.set("last_page", 0)
+	menu = load("res://scenes/Menu.tscn").instantiate()
+	add_child(menu)
+	await _frames(2)
+	menu.call("_check_for_updates")
+	var ru: Node = menu.find_child("ReleaseUpdate", true, false)
+	ru.set("platform_override", "Windows")
+	rel.tag_name = "v99.1.0"
+	menu.call("_on_release_checked", RU.call("parse_release", rel, mine))
+	await _frames(1)
+	var upd: Button = menu.find_child("UpdateNow", true, false)
+	_check(upd != null and upd.text == "Update Now", "releases: a newer release on Windows or a Mac is offered as Update Now")
+	ru.set("platform_override", "Linux")
+	menu.call("_on_release_checked", RU.call("parse_release", rel, mine))
+	await _frames(1)
+	upd = menu.find_child("UpdateNow", true, false)
+	_check(upd != null and upd.text == "Open the Releases Page", "releases: elsewhere, the releases page is offered instead")
+	menu.queue_free()
+	await _frames(2)
+
 ## Pirates used to attack and back away in a loop: a route went straight
 ## through a visible opponent they'd just retreated from, and they kept
 ## guessing an opponent's energy at 70 after a fight had shown 100.

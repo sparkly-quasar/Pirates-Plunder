@@ -1,5 +1,6 @@
 # Builds a release and publishes it on GitHub, the same files tools/package.sh
-# makes on a Mac: the .dmg, the Windows .exe, the server package and
+# makes on a Mac: the .dmg, the Windows .exe, the server package, the Mac
+# app zipped (for copies updating themselves from the releases) and
 # SHA256SUMS.txt. Runs on a Mac (hdiutil makes the disk image).
 #
 # To release: set config/version in godot/project.godot, write
@@ -89,7 +90,7 @@ jobs:
           title="$tag: $(head -1 "$notes" | sed 's/^# *//')"
           tail -n +2 "$notes" | sed '/./,$!d' > notes.md
           cd godot/build
-          files="PiratesPlunder-macos.dmg PiratesPlunder-windows.exe PiratesPlunder-server-linux.tar.gz SHA256SUMS.txt"
+          files="PiratesPlunder-macos.dmg PiratesPlunder-windows.exe PiratesPlunder-server-linux.tar.gz PiratesPlunder-mac.zip SHA256SUMS.txt"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release upload "$tag" $files --clobber
             gh release edit "$tag" --prerelease=false --latest

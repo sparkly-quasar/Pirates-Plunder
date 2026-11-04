@@ -96,13 +96,14 @@ Inspired by the 1996 PC game *Richard Carr's Treasure Island*, and built with
 | **Mac** | [Download `PiratesPlunder-macos.dmg`](https://github.com/sparkly-quasar/Pirates-Plunder/releases/latest/download/PiratesPlunder-macos.dmg), open it, and drag **Pirates Plunder** onto **Applications**. The app isn't signed by Apple yet, so the first time, right-click it and choose **Open**. |
 | **Windows** | [Download `PiratesPlunder-windows.exe`](https://github.com/sparkly-quasar/Pirates-Plunder/releases/latest/download/PiratesPlunder-windows.exe) and run it. Windows may warn about an unrecognised app: choose **More info**, then **Run anyway**. |
 | **Phone or browser** | Open the address of a Pirates Plunder server (see [Play on a Server](#ways-to-play) below). |
-| **Server** | [Download the Linux server](https://github.com/sparkly-quasar/Pirates-Plunder/releases/latest/download/PiratesPlunder-server-linux.tar.gz) and follow [godot/SERVER.md](godot/SERVER.md). |
+| **Server** | [Download the Linux server](https://github.com/sparkly-quasar/Pirates-Plunder/releases/latest/download/PiratesPlunder-server-linux.tar.gz) and see [Run a server](#run-a-server). |
 
 Each release lists its changes on the
 [Releases page](https://github.com/sparkly-quasar/Pirates-Plunder/releases).
-Once installed, the game updates itself: press **Check for Updates** on the
-main menu, or it offers to when you join a friend or a server with a newer
-copy.
+Once installed, the game updates itself: **Check for Updates** on the main
+menu finds the latest release here, downloads it, checks it against the
+release's fingerprints and restarts. Joining a friend or a server with a
+newer copy offers the update too.
 
 ## How to play
 
@@ -228,6 +229,22 @@ On a Mac or Windows the game opens in a big window the first time, and after
 that the way you left it: the same size and place, or full screen.
 
 </details>
+
+## Run a server
+
+A dedicated server is a copy of the game with no crew of its own, left
+running so friends (or anyone) can start and join games without anyone
+keeping their own computer on. It hands phones and browsers the game
+itself, keeps itself on the latest release (switching while nobody is
+playing), and brings older copies up to date as they connect.
+
+- **For friends:** run it at home and share the machine with them in
+  [Tailscale](https://tailscale.com); it shows up in their server list.
+- **For anyone:** a small Linux VPS, Docker, and Caddy for HTTPS. Follow
+  [A public server, step by step](godot/SERVER.md#a-public-server-step-by-step).
+
+Every setting, and how saving, the Hall of Fame and updates work on a
+server, is in [godot/SERVER.md](godot/SERVER.md).
 
 ## For developers
 
