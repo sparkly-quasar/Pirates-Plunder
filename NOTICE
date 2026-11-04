@@ -1,0 +1,13 @@
+Pirates Plunder
+Copyright (c) 2026 sparkly-quasar
+
+The game's code, art and text are licensed under the MIT License (see LICENSE).
+
+Not covered by that license:
+
+The sound effects and music in `audio/` and `godot/assets/audio/` (the .wav
+and .mid files) are taken from Richard Carr's Treasure Island (CarrSoft,
+1996). They are not part of the software licensed under the MIT License, they
+belong to their creators, and no rights to them are granted. They are included
+as a tribute; if the rights holder would like them removed, please open an
+issue and they will be taken out (see the note on the sounds in README.md).

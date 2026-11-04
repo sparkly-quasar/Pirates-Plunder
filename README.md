@@ -180,4 +180,4 @@ so replacing them is quick. See
 The game's code, art and text are under the [MIT License](LICENSE): use,
 change and share them freely, keeping the copyright notice. The sounds and
 music from the original 1996 game aren't covered by it (see the note on the sounds
-above, and the end of [`LICENSE`](LICENSE)).
+above, and [`NOTICE`](NOTICE)).

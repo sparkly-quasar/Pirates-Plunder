@@ -19,12 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
--------------------------------------------------------------------------------
-
-Not covered by this license
-
-The sound effects and music in `audio/` and `godot/assets/audio/` (the .wav
-and .mid files) are taken from Richard Carr's Treasure Island (CarrSoft,
-1996). They are not part of the Software licensed above, they belong to their
-creators, and no rights to them are granted here. See the note on the sounds in README.md.
