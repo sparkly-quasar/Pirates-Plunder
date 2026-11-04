@@ -1,0 +1,22 @@
+# Pirates Plunder server as a systemd service, without Docker.
+#   sudo useradd --system --create-home --home-dir /opt/pirates-plunder pirates
+#   sudo tar -xzf PiratesPlunder-server-linux.tar.gz -C /opt/pirates-plunder --strip-components=1
+#   sudo chown -R pirates: /opt/pirates-plunder
+#   sudo cp /opt/pirates-plunder/pirates-plunder.service /etc/systemd/system/
+#   sudo systemctl enable --now pirates-plunder
+#   journalctl -u pirates-plunder -f        # the log
+# Settings go after the "--" on the ExecStart line (see SERVER.md).
+[Unit]
+Description=Pirates Plunder server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pirates
+WorkingDirectory=/opt/pirates-plunder
+ExecStart=/opt/pirates-plunder/PiratesPlunder-server.x86_64 --headless -- --crews=2 --turn-seconds=180 --saves=/opt/pirates-plunder/saves
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,5 @@
+# Godot 4 — editor-generated files
+.godot/
+# Exported builds
+/build/
+*.tmp

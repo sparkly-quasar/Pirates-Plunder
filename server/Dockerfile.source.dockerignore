@@ -1,0 +1,11 @@
+# Only the Godot project goes into the server image, without the placeholder
+# sounds (copyrighted; a server never plays them) or any build output.
+.git
+audio/
+godot/.godot/
+godot/build/
+godot/dist/
+godot/assets/audio/
+*.dmg
+*.exe
+*.zip

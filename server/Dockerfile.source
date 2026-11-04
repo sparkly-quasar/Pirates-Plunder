@@ -1,0 +1,45 @@
+# Pirates Plunder server straight from the source, for when there's no
+# packaged server (tools/package.sh, on a Mac) to hand. Build from the
+# repository root:
+#   docker build -f server/Dockerfile.source -t pirates-plunder-server .
+#   docker run -d --name pirates --restart unless-stopped -p 24680-24681:24680-24681/udp -p 24680-24682:24680-24682/tcp pirates-plunder-server
+# It downloads Godot's Linux build (checksum checked) and runs the project
+# from source. Unlike the packaged server it can't update older copies unless
+# you mount a downloads folder (PP_DOWNLOADS; see godot/SERVER.md). The
+# placeholder sounds are left out (Dockerfile.source.dockerignore).
+
+ARG GODOT_VERSION=4.7.1
+
+FROM debian:bookworm-slim AS godot
+ARG GODOT_VERSION
+ARG TARGETARCH
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl unzip \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /tmp/godot
+RUN case "${TARGETARCH:-amd64}" in arm64) arch=arm64 ;; *) arch=x86_64 ;; esac \
+ && base="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable" \
+ && bin="Godot_v${GODOT_VERSION}-stable_linux.${arch}" \
+ && curl -fsSLO "$base/$bin.zip" \
+ && curl -fsSLO "$base/SHA512-SUMS.txt" \
+ && grep " $bin.zip\$" SHA512-SUMS.txt | sha512sum -c - \
+ && unzip -q "$bin.zip" \
+ && install -m 0755 "$bin" /usr/local/bin/godot
+
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --create-home --uid 10001 pirate \
+ && mkdir -p /srv/pirates/saves \
+ && chown pirate:pirate /srv/pirates/saves
+# (A volume mounted at /srv/pirates/saves, with PP_SAVES or --saves pointing
+# there, then belongs to pirate too; see server/Dockerfile.)
+COPY --from=godot /usr/local/bin/godot /usr/local/bin/godot
+COPY --chown=pirate:pirate godot/ /game/
+USER pirate
+WORKDIR /game
+# Builds Godot's cache of the project (.godot/), which the game needs to run.
+RUN godot --headless --path /game --import
+EXPOSE 24680/udp 24681/udp 24680/tcp 24681/tcp 24682/tcp
+ENTRYPOINT ["/usr/bin/tini", "--", "godot", "--headless", "--path", "/game", "--", "--server"]

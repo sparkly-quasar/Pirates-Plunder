@@ -1,0 +1,43 @@
+; Pirates Plunder — Godot 4 project
+; Engine configuration file. Safe to edit by hand; the editor will fill in
+; auto-managed fields (uids, features) the first time it opens the project.
+
+config_version=5
+
+[application]
+
+config/name="Pirates Plunder"
+config/description="A turn-based treasure hunt for one or two players, inspired by Richard Carr's Treasure Island (1996)."
+config/version="0.15.0"
+run/main_scene="res://scenes/Menu.tscn"
+config/features=PackedStringArray("4.3", "GL Compatibility")
+config/icon="res://icon.png"
+boot_splash/bg_color=Color(0.07, 0.1, 0.14, 1)
+boot_splash/show_image=false
+run/flush_stdout_on_print.dedicated_server=true
+
+[autoload]
+
+Touch="*res://scripts/touch.gd"
+WindowSize="*res://scripts/window_size.gd"
+AudioManager="*res://scripts/audio_manager.gd"
+GameConfig="*res://scripts/game_config.gd"
+Net="*res://scripts/net.gd"
+
+[display]
+
+; 1152x864 is exactly 1.5x the island (24x18 tiles of 32px), so at the camera's
+; 1.5 zoom the whole island fits on screen with the sprites still legible. It's
+; the design size; on a computer the window opens bigger (scripts/window_size.gd).
+window/size/viewport_width=1152
+window/size/viewport_height=864
+window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
+
+[rendering]
+
+environment/defaults/default_clear_color=Color(0.03, 0.04, 0.06, 1)
+textures/vram_compression/import_etc2_astc=true
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"

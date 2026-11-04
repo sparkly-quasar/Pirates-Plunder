@@ -1,0 +1,36 @@
+# Pirates Plunder server with Docker Compose, from the server package
+# (godot/build/server/ after tools/package.sh, or the .tar.gz unpacked):
+#   docker compose up -d --build     start it (to update: a fresh folder, see "Put it on a server" in SERVER.md)
+#   docker compose logs -f           who joins, seats, results, who's updating
+#   docker compose down              stop it
+# Players find it under Play on a Server (or type this machine's address).
+# Every setting is described in SERVER.md (godot/SERVER.md in the repository).
+services:
+  pirates:
+    build: .
+    image: pirates-plunder-server
+    platform: linux/amd64      # the server is an x86_64 program: on an ARM machine (an Apple Silicon Mac) Docker runs it under emulation
+    restart: unless-stopped
+    ports:
+      - "24680:24680/udp"      # the game
+      - "24681:24681/udp"      # players' server lists ask here
+      - "24680:24680/tcp"      # the game, for players in a web browser
+      - "24681:24681/tcp"      # browsers' server lists ask here
+      - "24682:24682/tcp"      # the game for web browsers: open http://<this machine>:24682/ on a phone
+    environment:
+      PP_NAME: ""              # its name in players' server lists (empty: the machine's Tailscale name)
+      PP_LOBBY: "players"      # players: the first player to pick it starts a game; always: a lobby always open (0.7.0)
+      PP_MOST_CREWS: "4"       # players: the most crews a game may have
+      PP_CREWS: "2"            # crews on the island, 2-4 (players: what a new game starts from)
+      PP_SEATS: "0"            # always: crews players can take (0 = all); the rest are the computer's
+      PP_MIN_PLAYERS: "2"      # always: players ready before the countdown below starts
+      PP_START_AFTER: "60"     # always: then wait this long for more, and fill empty seats with the computer
+      PP_LENGTH: "medium"      # short, medium or long (players: what a new game starts from)
+      PP_DIFFICULTY: "normal"  # the computer's crews: easy, normal or hard
+      PP_TURN_SECONDS: "180"   # a new game's turn limit, which players starting one can change (0 = no limit)
+      PP_REJOIN_SECONDS: "120" # a player lost their connection: wait this long before asking the others what to do
+      PP_SAVES: "/srv/pirates/saves" # campaigns kept here (the volume below keeps them across updates)
+    volumes:
+      - saves:/srv/pirates/saves
+volumes:
+  saves:

@@ -1,0 +1,18 @@
+# Godot editor cache / import artifacts (regenerated on open)
+godot/.godot/
+godot/android/
+
+# Exported builds
+build/
+*.dmg
+*.exe.zip
+
+# macOS
+.DS_Store
+
+# Scratch
+*.tmp
+shot.png
+
+# Build output: the other computer's version, bundled by tools/package.sh
+godot/dist/

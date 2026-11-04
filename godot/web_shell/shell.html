@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en" style="background:#121a24">
+<!--
+	The page a browser gets: the Web export preset's html/custom_html_shell.
+	Godot fills in its placeholders (the project name, config, URL) when it
+	exports. While the game downloads
+	and starts (the first time on a phone, up to a minute) it shows the game's
+	name, a progress bar and what's happening, in the menu's colours, so
+	there's never a blank screen. It's plain HTML and CSS, there from the
+	first byte; the script only moves the bar along.
+
+	Saved to a phone's home screen, the page shows the game's icon and name:
+	the icons and manifest.webmanifest beside this file (drawn by
+	tools/make_icon.py), which tools/package.sh copies next to the page.
+	Godot's own icon links are off (html/export_icon=false): its icon has
+	see-through corners, which an iPhone fills with black.
+-->
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<meta name="theme-color" content="#121a24">
+		<meta name="apple-mobile-web-app-title" content="Pirates Plunder">
+		<meta name="application-name" content="Pirates Plunder">
+		<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+		<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+		<link rel="manifest" href="manifest.webmanifest">
+		<title>$GODOT_PROJECT_NAME</title>
+		<style>
+html, body, #canvas {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+html, body {
+	background: #121a24;
+	color: #f2ead8;
+	height: 100%;
+}
+
+body {
+	overflow: hidden;
+	touch-action: none;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", Arial, sans-serif;
+	-webkit-text-size-adjust: 100%;
+}
+
+#canvas {
+	display: block;
+}
+
+#canvas:focus {
+	outline: none;
+}
+
+#loading {
+	position: fixed;
+	inset: 0;
+	z-index: 1;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.9rem;
+	padding: 1.5rem;
+	box-sizing: border-box;
+	background: radial-gradient(ellipse at 50% 40%, #1b2a3a 0%, #121a24 70%);
+	text-align: center;
+	transition: opacity 0.2s ease;
+}
+
+#loading.done {
+	opacity: 0;
+	pointer-events: none;
+}
+
+#loading img {
+	width: 6rem;
+	height: 6rem;
+	border-radius: 1.3rem;
+	box-shadow: 0 0.4rem 1.6rem rgba(0, 0, 0, 0.45);
+	animation: bob 2.4s ease-in-out infinite;
+}
+
+@keyframes bob {
+	0%, 100% { transform: translateY(0) rotate(-2deg); }
+	50% { transform: translateY(-0.35rem) rotate(2deg); }
+}
+
+#loading h1 {
+	margin: 0.3rem 0 0;
+	font-size: 2rem;
+	letter-spacing: 0.12em;
+	color: #ffde8c;
+	font-weight: 700;
+}
+
+#loading .sub {
+	margin: 0;
+	font-size: 0.95rem;
+	opacity: 0.7;
+}
+
+#bar {
+	width: min(20rem, 70vw);
+	height: 0.55rem;
+	margin-top: 0.8rem;
+	border-radius: 1rem;
+	background: rgba(255, 255, 255, 0.12);
+	overflow: hidden;
+}
+
+#bar-fill {
+	height: 100%;
+	width: 0%;
+	border-radius: 1rem;
+	background: linear-gradient(90deg, #c8963c, #ffde8c);
+	transition: width 0.25s ease;
+}
+
+/* Before the first numbers (or if there are none): a shimmer, not a stall. */
+#bar.waiting #bar-fill {
+	width: 35%;
+	animation: sweep 1.3s ease-in-out infinite;
+}
+
+@keyframes sweep {
+	0% { transform: translateX(-110%); }
+	100% { transform: translateX(310%); }
+}
+
+#status {
+	margin: 0;
+	min-height: 1.3em;
+	font-size: 0.95rem;
+	opacity: 0.85;
+}
+
+#hint {
+	margin: 0;
+	font-size: 0.85rem;
+	opacity: 0.6;
+	max-width: 24rem;
+	line-height: 1.35;
+}
+
+#sideways {
+	display: none;
+	margin: 0;
+	font-size: 0.9rem;
+	color: #ffde8c;
+	opacity: 0.85;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+	#sideways {
+		display: block;
+	}
+}
+
+#notice {
+	display: none;
+	max-width: 30rem;
+	margin-top: 0.6rem;
+	padding: 0.9rem 1.1rem;
+	border-radius: 0.6rem;
+	background: #4a2a30;
+	border: 1px solid #9b4a52;
+	font-size: 0.9rem;
+	line-height: 1.4;
+	text-align: left;
+	white-space: pre-line;
+}
+
+#loading.failed #bar, #loading.failed #status, #loading.failed #hint {
+	display: none;
+}
+
+#loading.failed #notice {
+	display: block;
+}
+
+#loading.failed img {
+	animation: none;
+}
+		</style>
+		$GODOT_HEAD_INCLUDE
+	</head>
+	<body>
+		<canvas id="canvas">
+			Your browser does not support the canvas tag.
+		</canvas>
+
+		<div id="loading">
+			<img id="icon" src="apple-touch-icon.png" alt="">
+			<h1>PIRATES PLUNDER</h1>
+			<p class="sub">Race the pirates for the island's treasure.</p>
+			<div id="bar" class="waiting"><div id="bar-fill"></div></div>
+			<p id="status">Loading the game&hellip;</p>
+			<p id="hint"></p>
+			<p id="sideways">Hold your phone sideways to play.</p>
+			<div id="notice"></div>
+			<noscript><div style="margin-top:1rem">This game needs JavaScript switched on.</div></noscript>
+		</div>
+
+		<script src="$GODOT_URL"></script>
+		<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+
+(function () {
+	const loading = document.getElementById('loading');
+	const bar = document.getElementById('bar');
+	const fill = document.getElementById('bar-fill');
+	const status = document.getElementById('status');
+	const hint = document.getElementById('hint');
+	const notice = document.getElementById('notice');
+
+	// The first time, a phone downloads about 11 MB and then compiles the
+	// game, which can take a while with nothing to count. Say so.
+	const slowHint = setTimeout(function () {
+		hint.textContent = 'The first time takes a minute on a phone. After that it starts much faster.';
+	}, 15000);
+
+	function fail(text) {
+		clearTimeout(slowHint);
+		notice.textContent = text;
+		loading.classList.add('failed');
+	}
+
+	if (typeof Engine === 'undefined') {
+		fail('The game didn\'t download. Check the connection (is Tailscale on?) and reload the page.');
+		return;
+	}
+
+	const missing = Engine.getMissingFeatures({ threads: GODOT_THREADS_ENABLED });
+	if (missing.length !== 0) {
+		let text = 'This browser can\'t run the game here:\n• ' + missing.join('\n• ');
+		if (!window.isSecureContext) {
+			text = 'This page needs a secure (https://) address to run the game.\n\n'
+				+ 'Ask whoever runs the server for its https:// address: with Tailscale, '
+				+ 'something like https://<machine>.<tailnet>.ts.net:10000/ (see "HTTPS with Tailscale" in SERVER.md).';
+		}
+		fail(text);
+		return;
+	}
+
+	const engine = new Engine(GODOT_CONFIG);
+	let readying = false;
+	engine.startGame({
+		onProgress: function (current, total) {
+			if (current > 0 && total > 0) {
+				bar.classList.remove('waiting');
+				const pct = Math.min(100, Math.floor((current / total) * 100));
+				fill.style.width = pct + '%';
+				if (current >= total) {
+					if (!readying) {
+						// Downloaded; now the browser compiles the game, with
+						// nothing to count, so the bar moves to show it's busy.
+						readying = true;
+						bar.classList.add('waiting');
+						status.textContent = 'Getting the ship ready…';
+					}
+				} else {
+					status.textContent = 'Loading the game… ' + pct + '%';
+				}
+			}
+		},
+	}).then(function () {
+		clearTimeout(slowHint);
+		fill.style.width = '100%';
+		loading.classList.add('done');
+		setTimeout(function () { loading.remove(); }, 300);
+	}, function (err) {
+		console.error(err);
+		fail('The game couldn\'t start: ' + (err && err.message ? err.message : String(err)) + '\nReloading the page may help.');
+	});
+}());
+		</script>
+	</body>
+</html>
