@@ -205,7 +205,7 @@ func _ready() -> void:
 			_log("Answers players' server lists on UDP port %d%s." % [status_port, (" as \"%s\"" % server_name) if server_name != "" else ""])
 		else:
 			_status = null
-			_log("Couldn't open UDP port %d for players' server lists (error %d), so it won't show up in them. It can still be joined by its address." % [status_port, status_err])
+			_log("Couldn't open UDP port %d for players' server lists (error %d). Copies from 0.15.4 on still find it over TCP (if web-port is on); older ones don't, but it can still be joined by its address." % [status_port, status_err])
 		if web_port >= 0:
 			_web_status = load("res://scripts/web_status.gd").new()
 			_web_status.info = _status_info

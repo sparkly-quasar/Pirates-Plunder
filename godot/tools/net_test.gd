@@ -51,6 +51,10 @@ extends Node
 #   godot --headless --path . res://tools/NetTest.tscn -- --role=check-old --pretend-version=0.0.1
 #   godot --headless --path . res://tools/NetTest.tscn -- --role=check-same
 #   godot --headless --path . res://tools/NetTest.tscn -- --role=check-newer --pretend-version=99.0.0
+# The server list over UDP, and over TCP when UDP is silent (see
+# net_finder_driver.gd); tools/finder_test.sh runs them:
+#   godot --headless --path . res://tools/NetTest.tscn -- --role=finder-udp
+#   godot --headless --path . res://tools/NetTest.tscn -- --role=finder-tcp
 # Battle Royale (see net_royale_driver.gd); tools/royale_test.sh runs them:
 #   godot --headless --path . -- --server --port=24697 --once
 #   godot --headless --path . res://tools/NetTest.tscn -- --role=royale-ann --player-name=Ann
@@ -84,6 +88,8 @@ func _ready() -> void:
 		script = "res://tools/net_check_update_driver.gd"
 	elif role.begins_with("royale"):
 		script = "res://tools/net_royale_driver.gd"
+	elif role.begins_with("finder"):
+		script = "res://tools/net_finder_driver.gd"
 	driver.set_script(load(script))
 	driver.set("role", role)
 	get_tree().root.add_child.call_deferred(driver)

@@ -12,6 +12,13 @@ is listed with what it's doing. A server that isn't on their tailnet can be
 typed in on that screen (`host` or `host:port`), or joined under **Join a
 Game** like a friend's computer.
 
+The question goes to the status port (UDP 24681). A machine that doesn't
+answer there within two seconds is also asked over TCP on the same port
+number (where browsers ask, so `web-port` must be on). Docker Desktop on a
+Mac once stopped forwarding a server's UDP 24681 while its other ports
+kept working; a server found that way is listed with "answering over TCP
+only", and can still be joined. Restarting its container brings UDP back.
+
 It runs one match at a time:
 
 1. **Free.** Nobody has started a game. The first player to pick the server
