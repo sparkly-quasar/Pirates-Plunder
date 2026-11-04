@@ -26,6 +26,11 @@ RUN chmod 0755 PiratesPlunder-server.x86_64 run.sh \
  && mkdir saves \
  && chown pirate:pirate saves
 USER pirate
+# Auto-update restarts the container into a new version rather than swapping
+# it inside (see run.sh), so keep a restart policy (restart: unless-stopped,
+# or docker run --restart unless-stopped), or the server stays stopped after
+# an update.
+ENV PP_RESTART_TO_UPDATE=1
 EXPOSE 24680/udp 24681/udp 24680/tcp 24681/tcp 24682/tcp
 # run.sh starts the server and keeps it on the newest version: auto-update
 # downloads new versions into the saves volume (saves/updates) and run.sh

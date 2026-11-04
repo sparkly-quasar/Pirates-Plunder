@@ -1068,7 +1068,10 @@ func _hand_over() -> void:
 	note.store_string(server)
 	note.close()
 	FileAccess.open(_ready_dir.path_join(TRIED_MARK), FileAccess.WRITE)
-	_log("Auto-update: nobody is here, so restarting into version %s." % _ready_version)
+	if OS.get_environment("PP_RESTART_TO_UPDATE") == "1":
+		_log("Auto-update: nobody is here, so stopping for Docker to restart the container into version %s." % _ready_version)
+	else:
+		_log("Auto-update: nobody is here, so restarting into version %s." % _ready_version)
 	_ready_dir = ""
 	set_process(false)
 	get_tree().quit(RESTART_CODE)

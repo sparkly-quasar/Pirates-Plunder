@@ -9,6 +9,10 @@
 #     it already has.
 #  3. A version that never got going after a handover isn't used again.
 #  4. Not started by run.sh, it only says a newer version is out.
+#  5-7. As in Docker (PP_RESTART_TO_UPDATE=1): run.sh stops instead of
+#     switching inside the container; the restart (run.sh again) starts the
+#     new version; one that doesn't get going sends the next start back to
+#     the image's own version.
 # Run from anywhere:  godot/tools/server_update_test.sh   (GODOT=/path/to/godot to pick one)
 set -u
 cd "$(dirname "$0")/.."
@@ -18,6 +22,10 @@ GAME=24674
 work=$(mktemp -d)
 project=$(pwd)
 fail=0
+# macOS has no timeout(1).
+command -v timeout > /dev/null || timeout() { perl -e 'alarm shift; exec @ARGV or die' "$@"; }
+# A run cut short by timeout can leave run.sh's server running: stop it.
+leftovers() { pkill -f -- "--port=$GAME" 2>/dev/null; sleep 1; }
 check() { if eval "$1"; then echo "  [PASS] $2"; else echo "  [FAIL] $2"; fail=1; fi; }
 
 # The old server: this project, posing as version 0.0.1, started through run.sh.
@@ -34,6 +42,7 @@ mkdir -p "$work/pkg/server" "$work/site"
 cat > "$work/pkg/server/PiratesPlunder-server.x86_64" <<'SH'
 #!/bin/sh
 echo "$@" > "$RAN_MARK"
+[ -n "${FAIL_START:-}" ] && exit 1
 touch "$(dirname "$0")/../STARTED"
 exit 0
 SH
@@ -66,6 +75,7 @@ check 'grep -q "already downloaded" "$work/two.txt" && ! grep -q "downloading it
 # 3. A version that was handed to and never got going is left alone.
 rm -f "$RAN_MARK" "$updates/99.0.0/STARTED"
 PP_TEST_RELEASES=http://127.0.0.1:$PORT timeout 15 "$work/old/run.sh" $settings > "$work/three.txt" 2>&1
+leftovers
 check '[ ! -f "$RAN_MARK" ] && grep -q "Free: waiting" "$work/three.txt"' "3: a version that never started isn't used again; the old one carries on"
 
 # 4. Not through run.sh: it says so, and stays put.
@@ -74,8 +84,38 @@ github=$!
 sleep 1
 rm -rf "$updates"
 PP_TEST_RELEASES=http://127.0.0.1:$PORT timeout 15 "$work/old/PiratesPlunder-server.x86_64" --headless -- $settings > "$work/four.txt" 2>&1
+leftovers
 check 'grep -q "Version 99.0.0 is out" "$work/four.txt" && [ ! -d "$updates/99.0.0" ]' "4: without run.sh it only says a newer version is out"
 kill $github 2>/dev/null; wait $github 2>/dev/null
+
+# 5. As in Docker: finds it, fetches it, and stops for the container to restart.
+python3 tools/fake_github.py $PORT "$work/site" v99.0.0 &
+github=$!
+sleep 1
+rm -rf "$updates"
+rm -f "$RAN_MARK"
+export PP_RESTART_TO_UPDATE=1 PP_LAUNCHER="$work/next-server"
+PP_TEST_RELEASES=http://127.0.0.1:$PORT timeout 90 "$work/old/run.sh" $settings > "$work/five.txt" 2>&1
+code=$?
+check '[ $code -eq 75 ] && [ ! -f "$RAN_MARK" ]' "5: in Docker, run.sh stops (code 75) instead of switching inside the container (got $code)"
+check '[ "$(cat "$PP_LAUNCHER")" = "$updates/99.0.0/server/PiratesPlunder-server.x86_64" ]' "5: and leaves the new version's path for the restart"
+check 'grep -q "for Docker to restart the container into version 99.0.0" "$work/five.txt"' "5: the log says the container will restart"
+kill $github 2>/dev/null; wait $github 2>/dev/null
+
+# 6. The restart: run.sh starts the new version straight away.
+PP_TEST_RELEASES=http://127.0.0.1:$PORT timeout 30 "$work/old/run.sh" $settings > "$work/six.txt" 2>&1
+check '[ -f "$RAN_MARK" ] && grep -q -- "--port=$GAME" "$RAN_MARK" && [ -f "$updates/99.0.0/STARTED" ]' "6: after the restart, run.sh starts the new version, with the same settings"
+check '! grep -q "Free: waiting" "$work/six.txt"' "6: without starting the old version first"
+
+# 7. A new version that doesn't get going: the next start is the image's own.
+rm -f "$RAN_MARK" "$updates/99.0.0/STARTED"
+FAIL_START=1 PP_TEST_RELEASES=http://127.0.0.1:$PORT timeout 30 "$work/old/run.sh" $settings > "$work/seven.txt" 2>&1
+check '[ -f "$RAN_MARK" ] && [ ! -s "$PP_LAUNCHER" ]' "7: a new version that didn't start is forgotten"
+rm -f "$RAN_MARK"
+PP_TEST_RELEASES=http://127.0.0.1:$PORT timeout 15 "$work/old/run.sh" $settings > "$work/seven-b.txt" 2>&1
+leftovers
+check '[ ! -f "$RAN_MARK" ] && grep -q "Free: waiting" "$work/seven-b.txt"' "7: the next start runs the image's own version, which doesn't pick it again"
+unset PP_RESTART_TO_UPDATE PP_LAUNCHER
 
 echo "== what the server said, the first time:"
 grep -E "Auto-update|Starting the new" "$work/one.txt" | sed 's/^/   /'
