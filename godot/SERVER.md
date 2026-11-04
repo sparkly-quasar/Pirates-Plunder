@@ -514,11 +514,11 @@ both start the server that way. A restart starts the version the package came wi
 which switches at once to the newest one already downloaded.
 
 **In Docker the container restarts** for an update: the server stops, Docker
-starts the container again, and `run.sh` starts the new version. (Swapping
-the server inside a running container could leave Docker Desktop's
-forwarding of the status port, UDP 24681, broken, so players' server lists
-stopped finding it until the container was restarted.) So the container
-needs a restart policy: `restart: unless-stopped` in `docker-compose.yml`
+starts the container again, and `run.sh` starts the new version, with
+every port set up afresh. (This came from a suspicion that swapping the
+server inside a running container broke Docker Desktop's forwarding of UDP
+24681. It didn't: that port once failed during a run with no update. But a
+fresh container for each version does no harm.) So the container needs a restart policy: `restart: unless-stopped` in `docker-compose.yml`
 (already there), or `--restart unless-stopped` with `docker run`. An image
 built from a package before 0.15.4 has the old `run.sh`, so it keeps
 swapping inside the container (and auto-update can't change the image
