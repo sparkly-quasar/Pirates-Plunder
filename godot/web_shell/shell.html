@@ -248,6 +248,46 @@ body {
 	}
 })();
 
+// Sound on iPhones and iPads. Safari mutes a page's sound while the phone's
+// silent switch is on, unless the page says it plays sound like an app
+// (audioSession 'playback'), and it only lets the game's sound start (or
+// start again, after a call or another app) on a tap. So every tap wakes the
+// game's audio if it's asleep. Elsewhere this changes nothing.
+(function () {
+	if (navigator.audioSession) {
+		try {
+			navigator.audioSession.type = 'playback';
+		} catch (e) {}
+	}
+	const Base = window.AudioContext || window.webkitAudioContext;
+	if (!Base) {
+		return;
+	}
+	const made = [];
+	function Tracked() {
+		const ctx = new Base(...arguments);
+		made.push(ctx);
+		return ctx;
+	}
+	Tracked.prototype = Base.prototype;
+	window.AudioContext = Tracked;
+	function wake() {
+		made.forEach(function (ctx) {
+			if (ctx.state !== 'running' && ctx.state !== 'closed') {
+				ctx.resume().catch(function () {});
+			}
+		});
+	}
+	['touchend', 'pointerup', 'click', 'keydown'].forEach(function (e) {
+		window.addEventListener(e, wake, { capture: true, passive: true });
+	});
+	document.addEventListener('visibilitychange', function () {
+		if (!document.hidden) {
+			wake();
+		}
+	});
+})();
+
 const GODOT_CONFIG = $GODOT_CONFIG;
 const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
 

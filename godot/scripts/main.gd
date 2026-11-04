@@ -39,6 +39,10 @@ var offer_label: Label
 ## Three or four crews: who has how many chests aboard, and who's left.
 var score_panel: PanelContainer
 var score_label: RichTextLabel
+## On a phone: the Scoreboard button beside Menu, and whether it has the
+## scoreboard open (it starts folded away).
+var score_button: Button
+var scores_open := false
 
 ## Shared computer: a screen between turns so neither side sees the other's map.
 var curtain: ColorRect
@@ -564,6 +568,20 @@ func _build_hud() -> void:
 		controls_label.text = "Tap one of yours, then where to go  |  tap an enemy to attack  |  double-tap to dig  |  drag to look around, pinch to zoom"
 		menu_button.custom_minimum_size = Vector2(110, 52)
 		menu_button.add_theme_font_size_override("font_size", 22)
+		# With three or four crews: the scoreboard, folded away behind a button.
+		score_button = Button.new()
+		score_button.name = "ScoreboardButton"
+		score_button.text = "Scoreboard"
+		score_button.toggle_mode = true
+		score_button.focus_mode = Control.FOCUS_NONE
+		score_button.custom_minimum_size = Vector2(0, 52)
+		score_button.add_theme_font_size_override("font_size", 22)
+		score_button.visible = false
+		score_button.pressed.connect(func() -> void:
+			score_button.set_pressed_no_signal(not score_button.button_pressed) # toggle_scores sets it
+			toggle_scores())
+		layer.add_child(score_button)
+		_refresh_scores()
 	_layout_hud()
 	get_viewport().size_changed.connect(_layout_hud)
 
@@ -599,6 +617,8 @@ func _layout_hud() -> void:
 	offer_panel.position = Vector2((view.x - 460) / 2.0, 120)
 	score_panel.position = Vector2(view.x - 402, 48 + (menu_button.size.y - 32))
 	menu_button.position = Vector2(view.x - menu_button.size.x - 12, 8)
+	if score_button != null:
+		score_button.position = Vector2(menu_button.position.x - score_button.get_combined_minimum_size().x - 8, menu_button.position.y)
 	if clock_panel != null:
 		# Level with Menu on a computer; a slim strip under it on a phone.
 		var clock_h := CLOCK_TOUCH_HEIGHT if Touch.enabled else menu_button.size.y
@@ -607,11 +627,12 @@ func _layout_hud() -> void:
 		_place_clock()
 		if Touch.enabled and score_panel != null:
 			score_panel.position.y += clock_h + 6 # the clock sits under Menu on a phone
+	_place_scores()
 
 ## Whether a point on the screen is on part of the HUD (so a tap there isn't
 ## also a tap on the island beneath it).
 func over_hud(pos: Vector2) -> bool:
-	for c: Control in [touch_bar, minimap, menu_button, chat, duel_panel, offer_panel, decision_panel, continue_button, tutorial]:
+	for c: Control in [touch_bar, minimap, menu_button, chat, duel_panel, offer_panel, decision_panel, continue_button, tutorial, score_panel, score_button]:
 		if c != null and c.is_visible_in_tree() and c.get_global_rect().has_point(pos):
 			return true
 	return false
@@ -793,7 +814,11 @@ func _on_status(_text: String) -> void:
 func _refresh_scores() -> void:
 	if score_panel == null or server == null:
 		return
-	score_panel.visible = server.team_count > 2
+	var shown := server.team_count > 2
+	if score_button != null:
+		score_button.visible = shown
+	# On a phone it stays folded away until the Scoreboard button opens it.
+	score_panel.visible = shown and (scores_open or not Touch.enabled)
 	if not score_panel.visible:
 		return
 	var v := server.viewer_team()
@@ -823,7 +848,25 @@ func _refresh_scores() -> void:
 			line += "  ★"
 		lines.append(("   " if paired else "") + line)
 	lines.append("[color=#c8c8c8]%d of %d chests still on the island[/color]" % [server.chests_left(), server.chests_total])
+	if Touch.enabled:
+		lines[lines.size() - 1] += "   [color=#c8c8c8](tap to hide)[/color]"
 	score_label.text = "\n".join(lines)
+	_place_scores.call_deferred()
+
+## The scoreboard fits its text and keeps to the right edge, under Menu.
+func _place_scores() -> void:
+	if score_panel == null:
+		return
+	score_panel.reset_size()
+	score_panel.position.x = get_viewport_rect().size.x - score_panel.size.x - 12
+
+## On a phone: opens the scoreboard (the Scoreboard button beside Menu), or
+## folds it away again.
+func toggle_scores() -> void:
+	scores_open = not scores_open
+	if score_button != null:
+		score_button.set_pressed_no_signal(scores_open)
+	_refresh_scores()
 
 func _banner(text: String, seconds := 2.5) -> void:
 	banner_label.text = text
@@ -1246,6 +1289,13 @@ func _build_scoreboard(layer: CanvasLayer, view: Vector2) -> void:
 	score_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	score_panel.visible = false
 	layer.add_child(score_panel)
+	if Touch.enabled:
+		# One line on a phone, so it doesn't cover the island: tap for the rest.
+		score_panel.name = "Scoreboard"
+		score_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+		score_panel.gui_input.connect(func(e: InputEvent) -> void:
+			if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+				toggle_scores())
 	score_label = RichTextLabel.new()
 	score_label.bbcode_enabled = true
 	score_label.fit_content = true
