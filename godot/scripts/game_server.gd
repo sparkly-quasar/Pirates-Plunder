@@ -1010,6 +1010,17 @@ func _check_rescue(c: Character) -> void:
 	if c.id == captive_id and not c.captured and c.cell == ships[NAVS]:
 		_win(NAVS, "%s is safe aboard" % c.stats.person_name)
 
+## Smugglers' Cove ("sweep"): won once every chest is aboard the NAVS' ship
+## and every rival is captured. True if that just won it.
+func _check_sweep() -> bool:
+	if goal != "sweep" or won or int(delivered[NAVS]) < chests_total:
+		return false
+	for t in rivals(NAVS):
+		if not _members(t).is_empty():
+			return false
+	_win(NAVS, "every chest aboard and every pirate captured: now they'll talk")
+	return true
+
 ## A rival standing beside the held captive, or null.
 func guard_beside_captive() -> Character:
 	var held := _held_captive()
@@ -1366,7 +1377,14 @@ func _check_wipeout() -> void:
 	if won or not two_teams:
 		return
 	var alive := alive_teams()
-	if not alive.is_empty() and alive.all(func(t: int) -> bool: return allies(t, alive[0])):
+	if goal == "sweep" and not alive.is_empty() and alive.all(func(t: int) -> bool: return allies(t, NAVS)):
+		# Smugglers' Cove: capturing every pirate isn't the whole job; the
+		# chests must all be aboard too. Carry on alone until they are.
+		if _check_sweep():
+			return
+		if rivals(NAVS).any(func(t: int) -> bool: return not _out.has(t)):
+			announce(NAVS, "Every pirate is captured. Now get every last chest aboard, and they'll talk.")
+	elif not alive.is_empty() and alive.all(func(t: int) -> bool: return allies(t, alive[0])):
 		var gone: Array = rivals(alive[0])
 		var reason := ("every one of the %s was captured" % TEAM_NAMES[gone[0]]) if gone.size() == 1 \
 			else "every rival crew was captured"
@@ -1474,6 +1492,15 @@ func _check_deliver(c: Character, cell: Vector2i) -> void:
 	c.set_carrying(false)
 	delivered[c.team] += 1
 	tally[c.id].aboard += 1
+	if goal == "sweep":
+		if not allies(c.team, NAVS):
+			_win(c.team, "the %s got a chest away, so the cove's treasure can't all be yours" % TEAM_NAMES[c.team])
+			return
+		if _check_sweep():
+			return
+		var still := chests_total - int(delivered[NAVS])
+		announce(c.team, "Chest aboard! %d to go%s." % [still, "" if alive_teams().all(func(t: int) -> bool: return allies(t, NAVS)) else ", and every pirate to capture"])
+		return
 	if c.id == chart_carrier:
 		_set_chart_carrier(-1)
 		if allies(c.team, NAVS):

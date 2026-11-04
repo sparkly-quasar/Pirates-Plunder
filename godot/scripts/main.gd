@@ -754,7 +754,12 @@ func _update_info() -> void:
 		turn_text += " — %s" % ("your move" if server.current_team == v
 			else "%s moving" % GameServer.TEAM_NAMES[server.current_team])
 	var chests := "%d of %d chests aboard" % [server.delivered[v], server.chests_total]
-	if not server.partners(v).is_empty():
+	if server.goal == "sweep":
+		var free := 0
+		for t in server.rivals(GameServer.NAVS):
+			free += server._members(t).size()
+		chests = "Chests: you %d of %d, pirates free %d (need all aboard, none free)" % [server.delivered[v], server.chests_total, free]
+	elif not server.partners(v).is_empty():
 		var ours := server.side_delivered(v)
 		chests = "Chests: your side %d, need %d to win" % [ours, ours + server.chests_to_win(v)]
 	elif server.team_count > 2:

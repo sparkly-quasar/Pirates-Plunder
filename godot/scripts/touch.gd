@@ -12,6 +12,10 @@ extends Node
 ##  - On the island, the map is tapped, dragged and pinched, and a bar of
 ##    buttons stands in for the keys (Main and PlayerController ask
 ##    `enabled`).
+##  - Typing (a name, a chat line, a server address): the text cursor is
+##    thick, bright and doesn't blink, and a strip across the top of the
+##    screen shows what you're typing with the cursor in it, above the
+##    phone's keyboard, which tends to cover the box itself.
 
 ## The design size on a phone: the height everything is laid out in. The
 ## width grows with the screen (a phone held sideways is about twice as wide).
@@ -31,6 +35,8 @@ func _ready() -> void:
 	root.content_scale_size = BASE
 	root.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_EXPAND
 	_build_turn_notice()
+	_build_typing_strip()
+	get_tree().node_added.connect(_on_node_added)
 	root.size_changed.connect(_on_resized)
 	_on_resized()
 
@@ -133,6 +139,7 @@ func words(text: String) -> String:
 func _process(delta: float) -> void:
 	if not enabled:
 		return
+	_update_typing_strip()
 	var scene := get_tree().current_scene
 	if scene == null:
 		return
@@ -172,3 +179,75 @@ func fit(screen: Control) -> void:
 		scroll.add_child(pad)
 		screen.add_child(scroll)
 		screen.move_child(scroll, at)
+
+# --- typing ---------------------------------------------------------------------
+
+## The text cursor a phone can see: thick, gold, steady.
+const CARET_COLOR := Color(1.0, 0.82, 0.3)
+const CARET_WIDTH := 3
+
+var _typing: CanvasLayer = null
+var _typing_label: Label = null
+var _typing_field: LineEdit = null
+
+## Every text box, as it's made, gets the cursor a phone can see.
+func _on_node_added(n: Node) -> void:
+	if n is LineEdit or n is TextEdit:
+		show_caret(n as Control)
+
+static func show_caret(box: Control) -> void:
+	box.set("caret_blink", false)
+	box.add_theme_constant_override("caret_width", CARET_WIDTH)
+	box.add_theme_color_override("caret_color", CARET_COLOR)
+	box.add_theme_color_override("selection_color", Color(1.0, 0.82, 0.3, 0.35))
+
+func _build_typing_strip() -> void:
+	_typing = CanvasLayer.new()
+	_typing.name = "TypingStrip"
+	_typing.layer = 105
+	var panel := PanelContainer.new()
+	panel.name = "Panel"
+	panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.06, 0.08, 0.12, 0.96)
+	style.border_color = CARET_COLOR
+	style.border_width_bottom = 2
+	style.set_content_margin_all(10)
+	panel.add_theme_stylebox_override("panel", style)
+	_typing_label = Label.new()
+	_typing_label.name = "Text"
+	_typing_label.add_theme_font_size_override("font_size", 26)
+	_typing_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_typing_label.clip_text = true
+	panel.add_child(_typing_label)
+	_typing.add_child(panel)
+	_typing.visible = false
+	add_child(_typing)
+
+## Shows the strip while a one-line text box has the focus, with what's in it
+## and a bar where the cursor is (dots for a hidden word).
+func _update_typing_strip() -> void:
+	if _typing == null:
+		return
+	var focus := get_viewport().gui_get_focus_owner()
+	var field: LineEdit = null
+	if focus is LineEdit and (focus as LineEdit).editable and focus.is_visible_in_tree():
+		field = focus as LineEdit
+	_typing_field = field
+	_typing.visible = field != null
+	if field == null:
+		return
+	_typing_label.text = typing_text(field)
+	_typing_label.modulate = Color(1, 1, 1, 1.0 if field.text != "" else 0.6)
+
+## What the strip says for `field`: its text with "|" at the cursor, or its
+## placeholder while it's empty.
+static func typing_text(field: LineEdit) -> String:
+	var words := field.text
+	if field.secret:
+		words = field.secret_character.repeat(words.length())
+	if words == "":
+		return "|  " + field.placeholder_text
+	var at := clampi(field.caret_column, 0, words.length())
+	return words.left(at) + "|" + words.substr(at)

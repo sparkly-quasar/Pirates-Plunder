@@ -45,9 +45,9 @@ const CHAPTERS := [
 	{"title": "Ashes in the Harbour", "tip": "Send your Scout ahead standing still: they see furthest. Diggers dig for a third of the energy, so let them do the digging.", "seed": 71031, "goal": "chests", "length": 0, "rivals": 1, "difficulty": 0,
 		"crew": 6, "rival_crew": 5, "drilled": 0,
 		"story": "Captain BlackPatch's pirates raided the harbour by night. They took the Star Chart, the only map to Treasure Island, and they took Vega, the fleet's finest navigator. Their ship was seen stopping here to bury the loot from the raid. Get it back before they sail on."},
-	{"title": "Smugglers' Cove", "tip": "A chest carrier fights at half strength. Keep a fighter near whoever is carrying.", "seed": 50287, "goal": "chests", "length": 0, "rivals": 1, "difficulty": 0,
+	{"title": "Smugglers' Cove", "tip": "Don't let a single chest get away: one pirate carrier reaching their ship loses the island. Hunt carriers first (a carrier fights at half strength), then round up the rest, and keep diggers and fighters close together.", "seed": 50287, "goal": "sweep", "length": 0, "rivals": 1, "difficulty": 0,
 		"crew": 6, "rival_crew": 6, "drilled": 0,
-		"story": "BlackPatch's crew split up to hide their plunder. A smuggler swears one party landed in this cove. Beat them to it, and maybe one of them will talk."},
+		"story": "BlackPatch's crew split up to hide their plunder, and a smuggler swears one party landed in this cove. They know where Vega is taken, but they'll only talk once they've nothing left to fight for: get every chest aboard your ship, and capture every last pirate. Let even one chest get away and they'll laugh in your face."},
 	{"title": "The Whispering Woods", "tip": "Woods cost more energy to cross and hide who's in them. Stand on open ground to look, crawl through the trees to stay hidden.", "seed": 33901, "goal": "chests", "length": 1, "rivals": 1, "difficulty": 1,
 		"crew": 7, "rival_crew": 7, "drilled": 1,
 		"story": "Thick woods, and the pirates know them. A bigger island, and these pirates are sharper than the last lot. Keep your Scout standing to see over the trees."},
@@ -132,6 +132,8 @@ static func tip(i: int) -> String:
 
 static func goal_text(i: int) -> String:
 	match str(chapter(i).goal):
+		"sweep":
+			return "Get every chest aboard your ship and capture every pirate."
 		"rescue":
 			return "Free Vega and get her aboard your ship."
 		"chart":
@@ -148,6 +150,8 @@ static func rules(i: int) -> Array[String]:
 	out.append("A %s%s island. You land %d sailors%s." % ["long and narrow, " if float(c.get("stretch", 1.0)) > 1.0 else "",
 		TerrainGrid.LENGTH_NAMES[int(c.length)].to_lower(), party_size(i),
 		", plus Vega" if vega_sails(i) else ""])
+	if str(c.goal) == "sweep":
+		out.append("All or nothing: if the pirates get a single chest aboard their ship, they win the island.")
 	if int(c.get("guards", 0)) > 0:
 		out.append("Guarded: a stockade with one gate, %d of BlackPatch's best inside, and an ambush on the way. You can't free her while a guard is beside her." % int(c.guards))
 		out.append("Outpost: your sailors resting beside it get double energy.")

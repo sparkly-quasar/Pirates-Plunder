@@ -1260,6 +1260,50 @@ func _test_campaign() -> void:
 	_check(game.settle_resumed() and game.won and game.winner == N, "chests: a resumed game already won ends at once")
 	_free_game(game)
 
+	# Smugglers' Cove ("sweep"): every chest aboard and every pirate captured.
+	g = TerrainGrid.new(4242)
+	game = _computer_game(g)
+	game.setup_goal("sweep")
+	_check(game.goal == "sweep" and Campaign.CHAPTERS[1].goal == "sweep", "sweep: Smugglers' Cove has its own goal")
+	game.delivered[N] = game.chests_total - 1
+	_check(not game._check_victory() and not game.won, "sweep: chests alone don't win it")
+	var sweeper: Character = game._members(N)[4]
+	for pir in game._members(P):
+		game._capture(pir, sweeper)
+	game._check_wipeout()
+	_check(not game.won and game._members(P).is_empty(), "sweep: capturing every pirate doesn't end it while a chest is left")
+	_check(game.current_team == N or not game._members(N).is_empty(), "sweep: the NAVS carry on alone")
+	var last: Character = game._members(N)[0]
+	last.set_carrying(true)
+	_place(last, g.nav_ship)
+	game._check_deliver(last, g.nav_ship)
+	_check(game.won and game.winner == N and game.win_reason.contains("talk"), "sweep: the last chest aboard with every pirate captured wins: %s" % game.win_reason)
+	_free_game(game)
+	g = TerrainGrid.new(4242)
+	game = _computer_game(g)
+	game.setup_goal("sweep")
+	game.delivered[N] = game.chests_total - 1
+	last = game._members(N)[0]
+	last.set_carrying(true)
+	_place(last, g.nav_ship)
+	game._check_deliver(last, g.nav_ship)
+	_check(not game.won and int(game.delivered[N]) == game.chests_total, "sweep: every chest aboard doesn't win it while pirates are free")
+	for pir in game._members(P):
+		game._capture(pir, game._members(N)[4])
+	game._check_wipeout()
+	_check(game.won and game.winner == N, "sweep: capturing the last pirate then wins it")
+	_free_game(game)
+	g = TerrainGrid.new(4242)
+	game = _computer_game(g)
+	game.setup_goal("sweep")
+	var thief: Character = game._members(P)[0]
+	thief.set_carrying(true)
+	_place(thief, g.pirate_ship)
+	game._check_deliver(thief, g.pirate_ship)
+	_check(game.won and game.winner == P, "sweep: one pirate chest aboard their ship loses the island")
+	_check(Campaign.goal_text(1).contains("every pirate") and Campaign.rules(1).any(func(r: String) -> bool: return r.contains("All or nothing")), "sweep: the island card says what it takes")
+	_free_game(game)
+
 	# Charted islands, the Golden Rooster.
 	g = TerrainGrid.new(4242)
 	game = _computer_game(g)
