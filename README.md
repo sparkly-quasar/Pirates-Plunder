@@ -174,3 +174,10 @@ repository and I'll take them out. All of the game's audio goes through one
 file ([`godot/scripts/audio_manifest.gd`](godot/scripts/audio_manifest.gd)),
 so replacing them is quick. See
 [`godot/PLACEHOLDER_ASSETS.md`](godot/PLACEHOLDER_ASSETS.md).
+
+## License
+
+The game's code, art and text are under the [MIT License](LICENSE): use,
+change and share them freely, keeping the copyright notice. The sounds and
+music from the original 1996 game aren't covered by it (see the note on the sounds
+above, and the end of [`LICENSE`](LICENSE)).
