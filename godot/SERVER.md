@@ -504,7 +504,19 @@ before. The log says each step (`Auto-update: ...`).
 This works through `run.sh`, which starts the server and switches to the
 new version when it asks. The Docker image and `pirates-plunder.service`
 both start the server that way. A restart starts the version the package came with,
-which switches at once to the newest one already downloaded. If a new
+which switches at once to the newest one already downloaded.
+
+**In Docker the container restarts** for an update: the server stops, Docker
+starts the container again, and `run.sh` starts the new version. (Swapping
+the server inside a running container could leave Docker Desktop's
+forwarding of the status port, UDP 24681, broken, so players' server lists
+stopped finding it until the container was restarted.) So the container
+needs a restart policy: `restart: unless-stopped` in `docker-compose.yml`
+(already there), or `--restart unless-stopped` with `docker run`. An image
+built from a package before 0.15.4 has the old `run.sh`, so it keeps
+swapping inside the container (and auto-update can't change the image
+itself): build it once from a 0.15.4 or newer package, in a fresh folder
+as under Put it on a server, and later updates restart the container. If a new
 version fails to start, the server doesn't switch to it again and carries
 on with the version it has. To stay on one version, set `auto-update=false`
 (`PP_AUTO_UPDATE: "false"`).

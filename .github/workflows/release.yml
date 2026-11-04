@@ -93,7 +93,8 @@ jobs:
           files="PiratesPlunder-macos.dmg PiratesPlunder-windows.exe PiratesPlunder-server-linux.tar.gz PiratesPlunder-mac.zip SHA256SUMS.txt"
           if gh release view "$tag" > /dev/null 2>&1; then
             gh release upload "$tag" $files --clobber
-            gh release edit "$tag" --prerelease=false --latest
+            # A run stopped partway can leave a draft behind: publish it too.
+            gh release edit "$tag" --draft=false --prerelease=false --latest
           else
             gh release create "$tag" $files --latest --target "$GITHUB_SHA" --title "$title" --notes-file ../../notes.md
           fi

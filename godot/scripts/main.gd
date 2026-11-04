@@ -617,16 +617,33 @@ func _layout_hud() -> void:
 	offer_panel.position = Vector2((view.x - 460) / 2.0, 120)
 	score_panel.position = Vector2(view.x - 402, 48 + (menu_button.size.y - 32))
 	menu_button.position = Vector2(view.x - menu_button.size.x - 12, 8)
-	if score_button != null:
-		score_button.position = Vector2(menu_button.position.x - score_button.get_combined_minimum_size().x - 8, menu_button.position.y)
 	if clock_panel != null:
 		# Level with Menu on a computer; a slim strip under it on a phone.
 		var clock_h := CLOCK_TOUCH_HEIGHT if Touch.enabled else menu_button.size.y
 		clock_panel.custom_minimum_size = Vector2(0, clock_h)
 		clock_panel.size = Vector2(0, clock_h) # shrink to the text
+	_place_right_column()
+
+## On a phone, down the right edge, each under the last: Menu, Scoreboard
+## (three or four crews), the turn clock (a turn limit), then the scoreboard
+## itself when it's open. Out of the way of the readout along the top.
+func _place_right_column() -> void:
+	if Touch.enabled:
+		var y := menu_button.position.y + menu_button.size.y + 6
+		var right := menu_button.position.x + menu_button.size.x
+		if score_button != null:
+			var w := score_button.get_combined_minimum_size()
+			score_button.position = Vector2(right - w.x, y)
+			if score_button.visible:
+				y += w.y + 6
+		if clock_panel != null:
+			clock_panel.position = Vector2(right - clock_panel.size.x, y)
+			if clock_panel.visible:
+				y += clock_panel.size.y + 6
+		if score_panel != null:
+			score_panel.position.y = y
+	elif clock_panel != null:
 		_place_clock()
-		if Touch.enabled and score_panel != null:
-			score_panel.position.y += clock_h + 6 # the clock sits under Menu on a phone
 	_place_scores()
 
 ## Whether a point on the screen is on part of the HUD (so a tap there isn't
@@ -727,11 +744,10 @@ func _make_label(pos: Vector2, font_size: int) -> Label:
 	return l
 
 ## Beside the Menu button on a computer; under it on a phone, where the
-## bigger text would cover the end of the readout.
+## bigger text would cover the end of the readout (_place_right_column).
 func _place_clock() -> void:
 	if Touch.enabled:
-		clock_panel.position = Vector2(menu_button.position.x + menu_button.size.x - clock_panel.size.x,
-			menu_button.position.y + menu_button.size.y + 6)
+		_place_right_column()
 	else:
 		clock_panel.position = Vector2(menu_button.position.x - clock_panel.size.x - 8, menu_button.position.y)
 
@@ -815,8 +831,9 @@ func _refresh_scores() -> void:
 	if score_panel == null or server == null:
 		return
 	var shown := server.team_count > 2
-	if score_button != null:
+	if score_button != null and score_button.visible != shown:
 		score_button.visible = shown
+		_place_right_column.call_deferred()
 	# On a phone it stays folded away until the Scoreboard button opens it.
 	score_panel.visible = shown and (scores_open or not Touch.enabled)
 	if not score_panel.visible:
