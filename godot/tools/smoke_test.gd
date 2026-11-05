@@ -2936,7 +2936,7 @@ func _test_vegas_course() -> void:
 	Campaign.path = path_before
 	await _frames(2)
 
-## Each sailor's own voice: Vega speaks in the higher one (old saves too),
+## Vega's own voice: she speaks in the higher one (from an old save too),
 ## everyone else in the original, and only spoken lines change.
 func _test_voices() -> void:
 	var high := AudioManifest.voiced(AudioManifest.TREASURE, "high")
@@ -2945,20 +2945,11 @@ func _test_voices() -> void:
 	for path in AudioManifest.VOICED:
 		_check(ResourceLoader.exists(AudioManifest.voiced(path, "high")), "voices: %s has a higher recording" % path.get_file())
 	var vega := Campaign.make_vega()
-	var old := vega.to_dict()
-	old.erase("voice")
 	var back := CharacterStats.make(vega.kind, vega.person_name)
-	back.apply_saved(old)
+	back.apply_saved(vega.to_dict())
 	var sailor := CharacterStats.make(CharacterStats.Kind.SCOUT, "Bering")
-	var plain := sailor.to_dict()
-	plain.erase("voice")
-	var sailor_back := CharacterStats.make(CharacterStats.Kind.SCOUT, "Bering")
-	sailor_back.apply_saved(plain)
-	sailor.voice = "high"
-	var kept := CharacterStats.make(CharacterStats.Kind.SCOUT, "Bering")
-	kept.apply_saved(sailor.to_dict())
-	_check(vega.voice == "high" and back.voice == "high" and sailor_back.voice == "" and kept.voice == "high",
-		"voices: Vega's is the higher one, even from an old save; a sailor keeps the voice you pick")
+	_check(vega.voice() == "high" and back.voice() == "high" and sailor.voice() == "",
+		"voices: Vega's is the higher one, saved or fresh; everyone else keeps the original")
 
 ## Normal, Hard and Extreme: tuned rivals, separate progress, old saves.
 func _test_campaign_levels() -> void:

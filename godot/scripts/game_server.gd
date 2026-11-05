@@ -1852,10 +1852,10 @@ func _default_status(t: int) -> String:
 
 ## Plays a sound for one team (or everyone with -1) on whichever machine that
 ## team is being played. A line a sailor speaks is said in their own voice
-## (`speaker`'s CharacterStats.voice).
+## (`speaker`'s CharacterStats.voice(): Vega's is higher).
 func _sfx(path: String, team := -1, speaker: Character = null) -> void:
 	if speaker != null and speaker.stats != null:
-		path = AudioManifest.voiced(path, speaker.stats.voice)
+		path = AudioManifest.voiced(path, speaker.stats.voice())
 	if team < 0 or is_local_team(team):
 		AudioManager.play(path)
 	if _hosting():

@@ -56,7 +56,7 @@ Inspired by the 1996 PC game *Richard Carr's Treasure Island*, and built with
   Normal, Hard and Extreme levels.
 - **A crew that grows with you.** Five classes (Scout, Digger, Runner,
   Fighter, Swordsman), a new recruit with every win, and one-to-one coaching
-  between islands. Pick each sailor's voice, deeper or higher, on Your Crew.
+  between islands.
 - **Multiplayer for up to four crews:** on one computer, friend to friend,
   or on a server you leave running. Free-for-all or 2v2, with chat, saved
   matches and automatic reconnecting.

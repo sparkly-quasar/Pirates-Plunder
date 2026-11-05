@@ -575,16 +575,6 @@ func rename(old_name: String, wanted: String) -> String:
 	save_crew()
 	return name
 
-## Your crew: the sailor called `person` now speaks in `voice`
-## (CharacterStats.VOICES).
-func set_voice(person: String, voice: String) -> void:
-	if not voice in CharacterStats.VOICES:
-		return
-	for d in crew:
-		if str(d.name) == person:
-			d["voice"] = voice
-	save_crew()
-
 ## Single player: a new sailor of `kind` joins the saved crew, named `wanted`
 ## if that's free (else the next navigator's name), and gets a place on the
 ## next island. Returns them.

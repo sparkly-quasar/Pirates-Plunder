@@ -482,5 +482,4 @@ static func make_vega() -> CharacterStats:
 	st.confidence = 40.0
 	st.coachable = true # she learns fast, and pushes herself
 	st.self_motivated = true
-	st.voice = "high"
 	return st

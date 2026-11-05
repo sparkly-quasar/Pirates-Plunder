@@ -32,11 +32,11 @@ const TAKE_CARRY := "res://assets/audio/sfx/TC_trans.wav"
 const COACH_SUCCESS := "res://assets/audio/sfx/Successf.WAV"
 const COACH_FAIL := "res://assets/audio/sfx/CUnsucc.WAV"
 
-# A sailor's own voice (CharacterStats.voice). The spoken lines a sailor says
-# come in a second, higher recording: the same line pitched up about seven
-# semitones with the voice's formants raised about 17%, so it sounds like a
-# different speaker rather than a sped-up tape (made with ffmpeg's rubberband
-# filter; see PLACEHOLDER_ASSETS.md). Lines a sailor doesn't speak (the dig,
+# Vega's voice (CharacterStats.voice()). The spoken lines a sailor says come
+# in a second, higher recording for her: the same line moved to a middle
+# pitch of about 230 Hz with the voice's formants raised 27%, so it sounds
+# like a woman speaking rather than a sped-up tape (made with Praat's Change
+# Gender; see PLACEHOLDER_ASSETS.md). Lines a sailor doesn't speak (the dig,
 # the sword, the win and lose calls) have only the one recording.
 const VOICE_DIRS := {"high": "res://assets/audio/sfx/voice_high/"}
 const VOICED := [TREASURE, YOUR_TURN, OFFER_CARRY, TAKE_CARRY]
