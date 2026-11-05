@@ -112,6 +112,17 @@ func _rename(team: int, index: int, wanted: String) -> void:
 		Net.send_match()
 	_refresh()
 
+## Your own crew: the sailor's next voice, kept with the crew, and a line in it.
+func _switch_voice(index: int) -> void:
+	if not solo or index < 0 or index >= solo_people.size():
+		return
+	var st := solo_people[index]
+	var at := CharacterStats.VOICES.find(st.voice)
+	st.voice = CharacterStats.VOICES[(at + 1) % CharacterStats.VOICES.size()]
+	GameConfig.set_voice(st.person_name, st.voice)
+	AudioManager.play(AudioManifest.voiced(AudioManifest.YOUR_TURN, st.voice))
+	_refresh()
+
 # --- layout ----------------------------------------------------------------
 
 func _build() -> void:
@@ -138,7 +149,7 @@ func _build() -> void:
 	if viewing:
 		lead = ("Everyone who has sailed with you in single player, as they stand now. Winning against the computer earns a round of coaching and a new recruit; confidence grows with every chest dug and fight won." if not solo_people.is_empty()
 			else "Nobody yet. Your NAVS join the crew the first time they land in a single-player game, and keep their training from then on.")
-		how = "\nThe tick on a bar is where that class started; the white line is as far as coaching can take it. Click a name to rename." if not solo_people.is_empty() else ""
+		how = "\nThe tick on a bar is where that class started; the white line is as far as coaching can take it. Click a name to rename, or Voice to change how they sound." if not solo_people.is_empty() else ""
 	var intro := _label(lead + how, 13)
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	intro.modulate = Color(1, 1, 1, 0.75)
@@ -355,6 +366,14 @@ func _card(team: int, index: int, st: CharacterStats) -> Dictionary:
 	var cls := _label("", 13)
 	cls.modulate = Color(1, 1, 1, 0.6)
 	names.add_child(cls)
+	# Your own crew: which voice they speak their lines in.
+	var voice_button := Button.new()
+	voice_button.add_theme_font_size_override("font_size", 12)
+	voice_button.tooltip_text = "The voice this sailor speaks their lines in. Click to switch and hear it."
+	voice_button.focus_mode = Control.FOCUS_NONE
+	voice_button.visible = solo
+	voice_button.pressed.connect(func() -> void: _switch_voice(index))
+	names.add_child(voice_button)
 	top.add_child(names)
 	col.add_child(top)
 	var career := _label("", 12)
@@ -381,7 +400,8 @@ func _card(team: int, index: int, st: CharacterStats) -> Dictionary:
 	var attitudes := _label("", 12)
 	attitudes.modulate = Color(1, 1, 1, 0.6)
 	col.add_child(attitudes)
-	return {"panel": panel, "edit": edit, "class": cls, "figure": figure, "bars": bars, "attitudes": attitudes, "career": career}
+	return {"panel": panel, "edit": edit, "class": cls, "figure": figure, "bars": bars, "attitudes": attitudes, "career": career,
+		"voice": voice_button}
 
 func _team_colour(team: int) -> Color:
 	return Character.ui_colour(team)
@@ -459,6 +479,7 @@ func _refresh_cards() -> void:
 			if not row.edit.has_focus():
 				row.edit.text = st.person_name
 			row["class"].text = "%s  ·  confidence %d" % [st.class_name_, roundi(st.confidence)]
+			row.voice.text = "Voice: %s" % CharacterStats.VOICE_NAMES.get(st.voice, "Deeper")
 			row.career.text = ("Career: " + st.career_text()) if st.career_text() != "" else "No games yet"
 			row.figure.stats.person_name = st.person_name
 			for skill in COLUMNS:

@@ -531,12 +531,13 @@ func _has_free_neighbour(c: Vector2i, taken: Dictionary) -> bool:
 			return true
 	return false
 
-## A stockade round `center`: a ring of fence two squares out, open only at
+## A stockade round `center`: a ring of fence `radius` squares out (two for a
+## captive's pen, three for a stronghold), open only at
 ## `gate`. Woods and water in the ring already keep people out.
-func build_pen(center: Vector2i, gate: Vector2i) -> void:
-	for dy in range(-2, 3):
-		for dx in range(-2, 3):
-			if maxi(absi(dx), absi(dy)) != 2:
+func build_pen(center: Vector2i, gate: Vector2i, radius := 2) -> void:
+	for dy in range(-radius, radius + 1):
+		for dx in range(-radius, radius + 1):
+			if maxi(absi(dx), absi(dy)) != radius:
 				continue
 			var cell := center + Vector2i(dx, dy)
 			if cell != gate and is_walkable(cell):

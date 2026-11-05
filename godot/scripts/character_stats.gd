@@ -50,6 +50,13 @@ var person_name := ""
 ## "" for everyone but a one-off sailor with their own rules: "vega", the
 ## navigator freed in the campaign (see Campaign). Kept with their saved stats.
 var special := ""
+## Which recording of the spoken lines this sailor uses: "" for the original
+## (deeper) voice, "high" for the higher one (AudioManifest.voiced). Vega
+## speaks in the higher voice unless you change it. Kept with their saved
+## stats, and changed on their card on the Your Crew / coaching screen.
+var voice := ""
+const VOICES := ["", "high"]
+const VOICE_NAMES := {"": "Deeper", "high": "Higher"}
 ## A sailor's lifetime record in your saved crew: games played, games won,
 ## chests found, chests got aboard and captures, over every single-player
 ## game (the campaign too) and Battle Royale they've sailed in. Bragging
@@ -107,6 +114,12 @@ func start_value(skill: String) -> float:
 	if special == Campaign.SPECIAL_VEGA:
 		return float(Campaign.make_vega().get(skill))
 	return float(CharacterStats.make(kind).get(skill))
+
+## A pirate this sailor beats in a sword fight may come over to the NAVS
+## rather than be captured (GameServer._defect_chance): Vega can talk them
+## round.
+func charismatic() -> bool:
+	return special == Campaign.SPECIAL_VEGA
 
 func coach_cap(skill: String) -> float:
 	if skill == "team_spirit" or special != "":
@@ -199,6 +212,7 @@ func to_dict() -> Dictionary:
 	if special != "":
 		d["special"] = special
 		d["class"] = class_name_
+	d["voice"] = voice
 	if not career.is_empty():
 		d["career"] = career.duplicate()
 	return d
@@ -231,6 +245,9 @@ func apply_saved(d: Dictionary) -> void:
 	if str(d.get("special", "")) != "":
 		special = str(d.special).left(16)
 		class_name_ = str(d.get("class", class_name_)).left(16)
+	# Saved before voices existed: Vega gets her own, everyone else the original.
+	var v := str(d.get("voice", "high" if special == Campaign.SPECIAL_VEGA else voice))
+	voice = v if v in VOICES else ""
 	var c: Variant = d.get("career")
 	if c is Dictionary:
 		career = {}

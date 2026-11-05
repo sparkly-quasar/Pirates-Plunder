@@ -51,11 +51,12 @@ Inspired by the 1996 PC game *Richard Carr's Treasure Island*, and built with
 
 - **A 15-island campaign, *The Star Chart*.** Captain BlackPatch stole the
   Star Chart and captured Vega, the fleet's best navigator. Storms, guarded
-  stockades, ambushes and rival crews stand between you and Treasure Island.
+  stockades, a pirate stronghold, ambushes and rival crews stand between you
+  and Treasure Island. Once Vega is free, beaten pirates may change sides.
   Normal, Hard and Extreme levels.
 - **A crew that grows with you.** Five classes (Scout, Digger, Runner,
   Fighter, Swordsman), a new recruit with every win, and one-to-one coaching
-  between islands.
+  between islands. Pick each sailor's voice, deeper or higher, on Your Crew.
 - **Multiplayer for up to four crews:** on one computer, friend to friend,
   or on a server you leave running. Free-for-all or 2v2, with chat, saved
   matches and automatic reconnecting.

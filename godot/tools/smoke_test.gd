@@ -222,6 +222,8 @@ func _ready() -> void:
 	_test_no_dither()
 	_test_recruits_land()
 	await _test_gallows_rock()
+	await _test_vegas_course()
+	_test_voices()
 	_test_campaign_levels()
 	_test_recruits()
 	await _test_coaching_screen()
@@ -2862,6 +2864,102 @@ func _test_gallows_rock() -> void:
 	GameConfig.crew = crew_before
 	await _frames(2)
 
+## Vega's Course: a long island with a stronghold by the pirates' ship (one
+## gate, the hoard inside counted among the chests, guards posted just inside
+## that the computer leaves be), and pirates who may come over when Vega's
+## about. Built in the real game scene.
+func _test_vegas_course() -> void:
+	var crew_before := GameConfig.crew.duplicate(true)
+	var path_before := Campaign.path
+	Campaign.path = "user://smoke_test_campaign.cfg"
+	Campaign.reset(true)
+	Campaign.win(Campaign.RESCUE)
+	GameConfig.crew = []
+	var i := Campaign.RESCUE + 1
+	var c := Campaign.chapter(i)
+	GameConfig.start_campaign(i, GameConfig.campaign_counts(Campaign.party_size(i)))
+	var main: Node2D = load("res://scenes/Main.tscn").instantiate()
+	add_child(main)
+	await _frames(3)
+	var game: GameServer = main.server
+	var g: TerrainGrid = game.grid
+	_check(g.width == TerrainGrid.SIZES[2].x and game.fort.x >= 0 and game.fort_chests == int(c.fort)
+		and game.chests_total == TerrainGrid.CHESTS[2] + int(c.fort), "vega's course: a long island with a stronghold, its hoard counted among the chests")
+	var hoard: Array = game.dropped.keys().filter(func(cell: Vector2i) -> bool: return game.in_fort(cell))
+	var shut := g.move_costs(g.nav_ship, {game.fort_gate: true})
+	var open := g.move_costs(g.nav_ship)
+	_check(hoard.size() == int(c.fort) and hoard.all(func(cell: Vector2i) -> bool: return open.has(cell) and not shut.has(cell)),
+		"vega's course: the hoard lies inside, and the gate is the only way in")
+	var posted: Array = game.posts.keys().filter(func(id: int) -> bool: return game.in_fort(game.characters[id].cell))
+	_check(posted.size() == int(c.fort_guards) and posted.all(func(id: int) -> bool: return game.characters[id].team == P_TEAM
+		and game.characters[id].stance != Character.Stance.CRAWLING), "vega's course: guards stand inside the stronghold")
+	var cpu := ComputerPlayer.new()
+	cpu.server = game
+	cpu.team = P_TEAM
+	var pirate: Character = game._members(P_TEAM).filter(func(p: Character) -> bool: return not game.posts.has(p.id))[0]
+	for cell in hoard:
+		game.revealed[P_TEAM][cell] = true
+	_check(cpu._dropped_chest(pirate, g.move_costs(pirate.cell)) == ComputerPlayer.NOWHERE, "vega's course: the computer leaves the hoard where it is")
+	cpu.free()
+
+	# Coming over.
+	var vega: Character = null
+	for p in game._members(N_TEAM):
+		if p.stats.special == Campaign.SPECIAL_VEGA:
+			vega = p
+	_check(vega != null and game.defections, "vega's course: Vega sails, and beaten pirates may come over")
+	var mate: Character = game._members(N_TEAM).filter(func(p: Character) -> bool: return p != vega)[0]
+	_place(vega, Vector2i(1, 1))
+	_place(pirate, Vector2i(3, 1))
+	_place(mate, Vector2i(20, 20))
+	_check(is_equal_approx(game._defect_chance(pirate, vega), GameServer.DEFECT_BY_VEGA)
+		and is_equal_approx(game._defect_chance(pirate, mate), GameServer.DEFECT_NEAR_VEGA)
+		and game._defect_chance(vega, pirate) == 0.0, "defect: best odds when Vega wins, good when she's near, never for the NAVS")
+	_place(pirate, Vector2i(30, 1))
+	_check(is_equal_approx(game._defect_chance(pirate, mate), GameServer.DEFECT_ANYWHERE), "defect: a long shot with Vega far away")
+	var guard := game.characters[int(posted[0])]
+	_check(is_equal_approx(game._defect_chance(guard, vega), GameServer.DEFECT_BY_VEGA * 0.5), "defect: a guard is half as easy to turn")
+	var pirates_before := game._members(P_TEAM).size()
+	game._defect(guard, vega)
+	_check(guard.team == N_TEAM and guard.turncoat and not guard.captured and not game.posts.has(guard.id)
+		and game._members(P_TEAM).size() == pirates_before - 1 and game._members(N_TEAM).has(guard),
+		"defect: the beaten pirate joins the NAVS where they stand, off their post")
+	game.defections = false
+	_check(game._defect_chance(pirate, vega) == 0.0, "defect: not before Vega sails with you")
+	var saved := game.save_state()
+	_check(bool(saved.people[guard.id].get("turncoat", false)) and saved.goal.fort == game.fort and int(saved.goal.fort_chests) == int(c.fort),
+		"vega's course: a saved game keeps the stronghold and who came over")
+	main.queue_free()
+	GameConfig.reset()
+	GameConfig.crew = crew_before
+	Campaign.reset(true)
+	Campaign.path = path_before
+	await _frames(2)
+
+## Each sailor's own voice: Vega speaks in the higher one (old saves too),
+## everyone else in the original, and only spoken lines change.
+func _test_voices() -> void:
+	var high := AudioManifest.voiced(AudioManifest.TREASURE, "high")
+	_check(high != AudioManifest.TREASURE and ResourceLoader.exists(high) and AudioManifest.voiced(AudioManifest.DIG, "high") == AudioManifest.DIG
+		and AudioManifest.voiced(AudioManifest.TREASURE, "") == AudioManifest.TREASURE, "voices: spoken lines have a higher recording; other sounds don't")
+	for path in AudioManifest.VOICED:
+		_check(ResourceLoader.exists(AudioManifest.voiced(path, "high")), "voices: %s has a higher recording" % path.get_file())
+	var vega := Campaign.make_vega()
+	var old := vega.to_dict()
+	old.erase("voice")
+	var back := CharacterStats.make(vega.kind, vega.person_name)
+	back.apply_saved(old)
+	var sailor := CharacterStats.make(CharacterStats.Kind.SCOUT, "Bering")
+	var plain := sailor.to_dict()
+	plain.erase("voice")
+	var sailor_back := CharacterStats.make(CharacterStats.Kind.SCOUT, "Bering")
+	sailor_back.apply_saved(plain)
+	sailor.voice = "high"
+	var kept := CharacterStats.make(CharacterStats.Kind.SCOUT, "Bering")
+	kept.apply_saved(sailor.to_dict())
+	_check(vega.voice == "high" and back.voice == "high" and sailor_back.voice == "" and kept.voice == "high",
+		"voices: Vega's is the higher one, even from an old save; a sailor keeps the voice you pick")
+
 ## Normal, Hard and Extreme: tuned rivals, separate progress, old saves.
 func _test_campaign_levels() -> void:
 	var path_before := Campaign.path
@@ -2898,6 +2996,7 @@ func _test_campaign_levels() -> void:
 	Campaign._loaded_from = ""
 
 const N_TEAM := 0
+const P_TEAM := 1
 const NAVS_TEAM := 0
 
 ## Single player: a win brings a recruit of the class you pick, who lands next
