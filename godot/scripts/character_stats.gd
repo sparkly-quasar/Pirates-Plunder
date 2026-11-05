@@ -108,6 +108,18 @@ func start_value(skill: String) -> float:
 		return float(Campaign.make_vega().get(skill))
 	return float(CharacterStats.make(kind).get(skill))
 
+## Which recording of the spoken lines this sailor uses
+## (AudioManifest.voiced): Vega has her own, higher voice; everyone else
+## speaks in the original.
+func voice() -> String:
+	return "high" if special == Campaign.SPECIAL_VEGA else ""
+
+## A pirate this sailor beats in a sword fight may come over to the NAVS
+## rather than be captured (GameServer._defect_chance): Vega can talk them
+## round.
+func charismatic() -> bool:
+	return special == Campaign.SPECIAL_VEGA
+
 func coach_cap(skill: String) -> float:
 	if skill == "team_spirit" or special != "":
 		return MAX_SKILL

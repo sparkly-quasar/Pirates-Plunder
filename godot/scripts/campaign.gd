@@ -32,6 +32,9 @@ const RESCUE := 6 ## Gallows Rock (island 7): free Vega
 const CHART := 11 ## BlackPatch's Hideout (island 12): dig up the Star Chart
 const FINAL := 14 ## Treasure Island
 const VEGA := "Vega"
+## A stronghold's fence, this many squares out from its middle (inside: a
+## 5x5 yard).
+const FORT_RADIUS := 3
 const SPECIAL_VEGA := "vega"
 
 const ACTS := [[0, "Act I: The Raid"], [5, "Act II: The Rescue"], [10, "Act III: The Star Chart"]]
@@ -63,9 +66,9 @@ const CHAPTERS := [
 	{"title": "Gallows Rock", "tip": "Scout first: she's somewhere near BlackPatch's camp. Rest at your outpost (double energy) before the push, watch for an ambush past it, and bring muscle: Swordsmen and Fighters, rested. The stockade has one gate, and you can't cut her free while a guard stands beside her.", "seed": 29150, "goal": "rescue", "length": 2, "rivals": 1, "difficulty": 1,
 		"crew": 9, "rival_crew": 14, "drilled": 3, "guards": 4, "stretch": 1.6,
 		"story": "Vega is held somewhere near BlackPatch's camp, behind a stockade with a single gate, and his four best stand guard over her. Scout ahead to find her. Your crew has set up an outpost on the way, where resting gives double energy; past it, pirates lie in ambush. You can't cut her free while a guard stands beside her: capture them, or draw them out through the gate, then get her aboard your ship. Chests won't win this island for you, but if the pirates get enough of them aboard, they sail away with her."},
-	{"title": "Vega's Course", "tip": "Vega sees further than anyone and fights well. Use her as your eyes, and keep her out of fights when she's tired.", "seed": 47738, "goal": "chests", "length": 1, "rivals": 1, "difficulty": 1,
-		"crew": 9, "rival_crew": 9, "drilled": 3,
-		"story": "Vega is free, and she sails with you now: quick, tireless, sharp-eyed and good with a sword. She's taking the helm to cut BlackPatch off. The rest of your crew lands with her."},
+	{"title": "Vega's Course", "tip": "The chests out on the island aren't enough on their own: you'll want some of the hoard. Scout the stronghold before you go in, take rested fighters to the gate, and send Vega with them. A pirate she beats, or one beaten near her, may throw down their sword and join you.", "seed": 47738, "goal": "chests", "length": 2, "rivals": 1, "difficulty": 1,
+		"crew": 9, "rival_crew": 11, "drilled": 3, "fort": 3, "fort_guards": 4,
+		"story": "Vega is free, and she sails with you now: quick, tireless, sharp-eyed and good with a sword. She's taking the helm to cut BlackPatch off before he reaches his stronghold, where the plunder from the raid is kept behind a wall with one gate. Half his crew think he's finished. With Vega talking to them, some might change sides."},
 	{"title": "Two Flags", "tip": "The pirates and the Corsairs play hard now and hunt carriers. Move carriers with an escort, and hand the chest over before a carrier runs out of energy.", "seed": 15664, "goal": "chests", "length": 1, "rivals": 2, "difficulty": 2,
 		"crew": 10, "rival_crew": 9, "drilled": 4,
 		"story": "The pirates and the Corsairs have joined forces against you. They play hard now: they take risks and hunt anyone carrying a chest."},
@@ -118,6 +121,8 @@ static func chapter(i: int) -> Dictionary:
 	c.drilled = int(c.drilled) + more
 	if int(c.get("guards", 0)) > 0:
 		c.guards = int(c.guards) + (1 if level == 1 else 2)
+	if int(c.get("fort_guards", 0)) > 0:
+		c.fort_guards = int(c.fort_guards) + (1 if level == 1 else 2)
 	if level >= 2:
 		c.pirates_first = true
 	return c
@@ -155,6 +160,11 @@ static func rules(i: int) -> Array[String]:
 	if int(c.get("guards", 0)) > 0:
 		out.append("Guarded: a stockade with one gate, %d of BlackPatch's best inside, and an ambush on the way. You can't free her while a guard is beside her." % int(c.guards))
 		out.append("Outpost: your sailors resting beside it get double energy.")
+	if int(c.get("fort", 0)) > 0:
+		out.append("Stronghold: %d chests from the raid lie inside BlackPatch's fort by his ship, behind one gate, with %d guards. The pirates won't move them: they're yours if you can get them out." % [
+			int(c.fort), int(c.get("fort_guards", 0))])
+	if vega_sails(i):
+		out.append("Vega's charm: a pirate your crew beats in a sword fight may join you instead of being captured, most often when Vega fights or is close by.")
 	if c.get("storm", false):
 		out.append("Storm: your crew get back a quarter less energy each turn (the pirates rest as usual), so they fight weaker when tired.")
 	if c.get("pirates_first", false):
@@ -371,6 +381,89 @@ static func rescue_layout(g: TerrainGrid) -> Dictionary:
 				break
 	best["ambush"] = ambush
 	return best
+
+## A stronghold's layout, the same every time for the same island: its
+## middle (6-11 squares from the rivals' ship, no X near it, mostly open
+## inside), the gate in its fence (the ring square cheapest to reach from the
+## NAVS' ship), the hoard (`chests` squares at the back, away from the gate)
+## and guard posts (`guards` squares just inside the gate). Every X and both
+## ships must still be reachable with the fence up. {center, gate, hoard,
+## guards}; {} if there's no room.
+static func fort_layout(g: TerrainGrid, chests: int, guards: int) -> Dictionary:
+	var r := FORT_RADIUS
+	var from_home := g.move_costs(g.nav_ship)
+	var ship := g.pirate_ship
+	var options := []
+	for y in range(r + 1, g.height - r - 1):
+		for x in range(r + 1, g.width - r - 1):
+			var c := Vector2i(x, y)
+			var d: int = maxi(absi(c.x - ship.x), absi(c.y - ship.y))
+			if d < r + 3 or d > r + 8 or not g.is_meadow(c):
+				continue
+			var near_x := false
+			for m in g.markers:
+				if maxi(absi(m.x - c.x), absi(m.y - c.y)) <= r + 2:
+					near_x = true
+			if near_x or maxi(absi(g.nav_ship.x - c.x), absi(g.nav_ship.y - c.y)) <= r + 2:
+				continue
+			var open := 0
+			for dy in range(-(r - 1), r):
+				for dx in range(-(r - 1), r):
+					if g.is_walkable(c + Vector2i(dx, dy)):
+						open += 1
+			if open < chests + guards + 8:
+				continue
+			options.append([absf(d - (r + 5.0)) * 10.0 + c.x * 0.001 + c.y * 0.00001, c])
+	options.sort_custom(func(a: Array, b: Array) -> bool: return float(a[0]) < float(b[0]))
+	for o in options.slice(0, 12):
+		var out := _fort_at(g, o[1], from_home, chests, guards)
+		if not out.is_empty():
+			return out
+	return {}
+
+static func _fort_at(g: TerrainGrid, c: Vector2i, from_home: Dictionary, chests: int, guards: int) -> Dictionary:
+	var r := FORT_RADIUS
+	var gate := Vector2i(-1, -1)
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if maxi(absi(dx), absi(dy)) != r or (absi(dx) == r and absi(dy) == r):
+				continue # not the corners: a gate needs a square inside it
+			var ring := c + Vector2i(dx, dy)
+			var inner := ring - Vector2i(signi(dx) if absi(dx) == r else 0, signi(dy) if absi(dy) == r else 0)
+			if g.is_walkable(ring) and g.is_walkable(inner) and from_home.has(ring) \
+					and (gate.x < 0 or float(from_home[ring]) < float(from_home[gate])):
+				gate = ring
+	if gate.x < 0:
+		return {}
+	var probe := TerrainGrid.new(g.island_seed, g.length, g.teams, g.stretch)
+	probe.build_pen(c, gate, r)
+	var from_navs := probe.move_costs(g.nav_ship)
+	var from_rivals := probe.move_costs(g.pirate_ship)
+	if not from_navs.has(g.pirate_ship):
+		return {}
+	for m in g.markers:
+		var reach := false
+		for n in probe.neighbours(m):
+			if probe.is_meadow(n) and from_navs.has(n) and from_rivals.has(n):
+				reach = true
+				break
+		if not reach:
+			return {}
+	# Inside, by walking distance from the gate: guards nearest, hoard furthest.
+	var inside := probe.move_costs(gate)
+	var yard: Array[Vector2i] = []
+	for cell in inside:
+		var gap: Vector2i = (cell - c).abs()
+		if maxi(gap.x, gap.y) < r:
+			yard.append(cell)
+	if yard.size() < chests + guards:
+		return {}
+	yard.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return float(inside[a]) < float(inside[b]) or (float(inside[a]) == float(inside[b]) and (a.x < b.x or (a.x == b.x and a.y < b.y))))
+	var hoard: Array[Vector2i] = []
+	for i in chests:
+		hoard.append(yard[yard.size() - 1 - i])
+	return {"center": c, "gate": gate, "hoard": hoard, "guards": yard.slice(0, guards)}
 
 ## Vega as she is when you first find her: a navigator (she wears a Scout's
 ## telescope) with skills no recruit starts with. Coaching can take her to

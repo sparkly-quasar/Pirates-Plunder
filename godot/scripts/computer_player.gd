@@ -114,6 +114,9 @@ func _process(delta: float) -> void:
 		return
 	_wait = THINK_TIME
 	_note_finds()
+	for id in _goal.keys():
+		if server.characters[int(id)].team != team:
+			_goal.erase(id) # came over to the other side mid-turn
 	var people := server._members(team)
 	# Carriers first: they have the most to lose and the clearest job.
 	people.sort_custom(func(a: Character, b: Character) -> bool: return a.carrying and not b.carrying)
@@ -215,6 +218,8 @@ func _dropped_chest(c: Character, costs: Dictionary) -> Vector2i:
 	for cell in server.dropped:
 		if not server.revealed[team].has(cell) or not costs.has(cell):
 			continue
+		if server.in_fort(cell):
+			continue # the stronghold's hoard stays where it is, under guard
 		var claimed := false
 		for id in _goal:
 			if id != c.id and _goal[id][0] == cell:
@@ -320,7 +325,7 @@ func _keep_post(c: Character, costs: Dictionary) -> bool:
 	var gap: Vector2i = (c.cell - post).abs()
 	var home := maxi(gap.x, gap.y) <= 1 if beside else c.cell == post
 	if home:
-		if not beside and c.stance != Character.Stance.CRAWLING:
+		if not beside and c.stance != Character.Stance.CRAWLING and not server.in_fort(post):
 			_select(c)
 			server.intent(team, "stance", [Character.Stance.CRAWLING])
 		return false # on post

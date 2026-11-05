@@ -63,6 +63,10 @@ var energy := 0.0
 var carrying := false
 var bare := false                           # a picture (the ending): no combat bar
 var captive := false                        # held prisoner on a campaign island: tied to a post
+## A rival who came over to the NAVS mid-island, won round by Vega
+## (GameServer._defect). They fight for you until the island ends, then sail
+## home: they don't join your saved crew.
+var turncoat := false
 var chart := false                           # the chest in their arms is the Star Chart (campaign)
 var stance: Stance = Stance.STANDING
 
@@ -93,6 +97,16 @@ func setup(start_cell: Vector2i, character_stats: CharacterStats, side: Team = T
 		hat_stripe = Color(1.0, 0.86, 0.35)
 	energy = CharacterStats.MAX_ENERGY
 	position = cell_to_pos(start_cell)
+
+## Changes sides where they stand (a pirate won over by Vega): the new crew's
+## colours, the same person.
+func join_team(side: Team) -> void:
+	team = side
+	var t := clampi(int(side), 0, MAX_TEAMS - 1)
+	team_color = SHIRTS[t]
+	hat_color = HATS[t]
+	hat_stripe = BANDS[t]
+	queue_redraw()
 
 func _process(delta: float) -> void:
 	anim += delta

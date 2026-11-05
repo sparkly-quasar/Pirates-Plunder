@@ -64,6 +64,8 @@ func _ready() -> void:
 	grid = TerrainGrid.new(GameConfig.island_seed, GameConfig.length, GameConfig.island_teams(), GameConfig.island_stretch())
 	if GameConfig.in_campaign() and int(Campaign.chapter(GameConfig.campaign_chapter).get("guards", 0)) > 0:
 		_lay_out_rescue()
+	if GameConfig.in_campaign() and int(Campaign.chapter(GameConfig.campaign_chapter).get("fort", 0)) > 0:
+		_lay_out_fort()
 
 	world_view = WorldView.new()
 	world_view.grid = grid
@@ -201,6 +203,40 @@ func _lay_out_rescue() -> void:
 	if not rescue.is_empty():
 		grid.build_pen(rescue.captive, rescue.gate)
 
+## A stronghold (Vega's Course): its fence goes up before the island is
+## drawn (a resumed game puts it where it was; its hoard and guards come back
+## with the rest of the saved game).
+var fort_plan := {}
+func _lay_out_fort() -> void:
+	var saved_goal: Variant = GameConfig.resume.get("goal", {})
+	if saved_goal is Dictionary and saved_goal.get("fort") is Vector2i and Vector2i(saved_goal.fort).x >= 0:
+		fort_plan = {"center": saved_goal.fort, "gate": saved_goal.get("fort_gate", Vector2i(-1, -1))}
+	elif not GameConfig.resume.is_empty():
+		return # saved before this island had a stronghold: play on without one
+	else:
+		var c := Campaign.chapter(GameConfig.campaign_chapter)
+		fort_plan = Campaign.fort_layout(grid, int(c.fort), int(c.get("fort_guards", 0)))
+	if not fort_plan.is_empty():
+		grid.build_pen(fort_plan.center, fort_plan.gate, Campaign.FORT_RADIUS)
+
+## The stronghold's guards: the rivals' best swordsmen and fighters, on posts
+## just inside the gate. They go for anyone within three squares and then go
+## back, standing (they aren't hiding).
+func _post_fort_guards(cells: Array) -> void:
+	var rank := {CharacterStats.Kind.SWORDSMAN: 0, CharacterStats.Kind.FIGHTER: 1, CharacterStats.Kind.RUNNER: 2,
+		CharacterStats.Kind.SCOUT: 3, CharacterStats.Kind.DIGGER: 4}
+	var free: Array = characters.filter(func(p: Character) -> bool: return p.team == Character.Team.PIRATES and not server.posts.has(p.id))
+	free.sort_custom(func(a: Character, b: Character) -> bool: return int(rank[a.stats.kind]) < int(rank[b.stats.kind]))
+	# Keep at least a few pirates free to dig and fight.
+	for i in mini(cells.size(), free.size() - 3):
+		var p: Character = free[i]
+		var at: Vector2i = cells[i]
+		if server._occupant(at) != null:
+			continue
+		p.cell = at
+		p.position = Character.cell_to_pos(at)
+		server.posts[p.id] = [at, 3, false]
+
 ## Ambushers: pirates lying low (crawling) beside the way past the outpost,
 ## who go for anyone coming within three squares and then slip back.
 func _post_ambush(spots: Array) -> void:
@@ -264,6 +300,10 @@ func _setup_campaign_island() -> void:
 		_post_ambush(rescue.get("ambush", []))
 	if captive >= 0 and GameConfig.resumed:
 		characters[captive].captured = true # load_state puts back whether she's still held
+	server.defections = Campaign.vega_sails(GameConfig.campaign_chapter)
+	if fort_plan.has("hoard") and not GameConfig.resumed:
+		server.setup_fort(fort_plan.center, fort_plan.gate, fort_plan.hoard)
+		_post_fort_guards(fort_plan.guards)
 	if c.get("storm", false):
 		server.rest_scale[Character.Team.NAVS] = 0.75
 	if c.get("charted", false) and not GameConfig.resumed:
@@ -309,6 +349,7 @@ func _rebuild_people(people: Array) -> void:
 		c.z_index = 25
 		add_child(c)
 		c.setup(p.cell, stats, int(p.team))
+		c.turncoat = bool(p.get("turncoat", false))
 		characters.append(c)
 
 func _build_camera() -> void:
@@ -960,7 +1001,7 @@ func _results() -> Dictionary:
 	var people := []
 	for c in characters:
 		people.append({"name": c.stats.person_name, "kind": c.stats.kind, "team": c.team,
-			"captured": c.captured, "carrying": c.carrying, "tally": server.tally[c.id]})
+			"captured": c.captured, "carrying": c.carrying, "turncoat": c.turncoat, "tally": server.tally[c.id]})
 	return {
 		"winner": server.winner, "reason": server.win_reason, "turn": server.turn,
 		"delivered": server.delivered.duplicate(), "total": server.chests_total,
@@ -988,7 +1029,7 @@ func _after_game() -> void:
 	if GameConfig.in_campaign():
 		var mine := []
 		for c in characters:
-			if c.team == Character.Team.NAVS and not (c.captive and not navs_won):
+			if c.team == Character.Team.NAVS and not c.turncoat and not (c.captive and not navs_won):
 				mine.append({"name": c.stats.person_name, "tally": server.tally[c.id]})
 		Campaign.add_records(mine)
 		if navs_won and Campaign.win(GameConfig.campaign_chapter):
@@ -996,7 +1037,7 @@ func _after_game() -> void:
 	var party: Array = []
 	for c in characters:
 		# A captive only joins your crew once you've won her island.
-		if c.team == Character.Team.NAVS and not (c.captive and not navs_won):
+		if c.team == Character.Team.NAVS and not c.turncoat and not (c.captive and not navs_won):
 			c.stats.add_career(server.tally[c.id], navs_won) # their lifetime record
 			party.append(c.stats)
 	GameConfig.remember(party)

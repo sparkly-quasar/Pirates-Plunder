@@ -139,6 +139,15 @@ var posts := {}
 var outpost := Vector2i(-1, -1)
 var pen := Vector2i(-1, -1)
 var pen_gate := Vector2i(-1, -1)
+## A stronghold (Campaign "fort"): a big stockade by the rivals' ship with one
+## gate, the hoard from the raid lying inside it as chests on the ground, and
+## guards posted at the gate. The computer crews leave the hoard where it is
+## (ComputerPlayer), so it's there for the NAVS to take. fort_chests: how many
+## chests the hoard started with, counted in chests_total.
+var fort := Vector2i(-1, -1)
+var fort_gate := Vector2i(-1, -1)
+var fort_chests := 0
+var _base_chests := 0
 var chart_spot := Vector2i(-1, -1)  # chart: where it's buried, while it is
 var chart_marker := Vector2i(-1, -1) # chart: its X, drawn gold
 var chart_carrier := -1             # chart: who has it in their arms
@@ -224,6 +233,7 @@ func setup(_grid: TerrainGrid, people: Array[Character]) -> void:
 	for m in x_markers:
 		buried[_buried_spot(m, chest_rng)] = m
 	chests_total = buried.size()
+	_base_chests = chests_total
 	for t in _teams():
 		active_by_team[t] = _members(t)[0] if not _members(t).is_empty() else null
 	first_team = clampi(first_team, 0, team_count - 1)
@@ -711,7 +721,7 @@ func _pass_turn(team: int) -> void:
 	_refresh_vision()
 	fog_changed.emit()
 	if two_teams:
-		_sfx(AudioManifest.YOUR_TURN, current_team)
+		_sfx(AudioManifest.YOUR_TURN, current_team, active_by_team[current_team])
 		for t in _teams():
 			if t == current_team:
 				announce(t, "Your turn — everyone rested.")
@@ -765,7 +775,8 @@ func save_state() -> Dictionary:
 	var people := []
 	for c in characters:
 		people.append({"stats": c.stats.to_dict(), "team": c.team, "cell": c.cell, "energy": c.energy,
-			"stance": c.stance, "carrying": c.carrying, "captured": c.captured, "facing": c.facing})
+			"stance": c.stance, "carrying": c.carrying, "captured": c.captured, "facing": c.facing,
+			"turncoat": c.turncoat})
 	var hidden := []
 	for spot in buried:
 		hidden.append([spot, buried[spot]])
@@ -778,7 +789,8 @@ func save_state() -> Dictionary:
 		"delivered": delivered, "turn": turn, "cur": current_team, "act": act, "first": first_team,
 		"view": _hotseat_view, "revealed": fog, "goal": {"goal": goal, "captive": captive_id, "guards": guards.keys(), "posts": _posts_list(),
 			"outpost": outpost, "pen": pen, "gate": pen_gate, "spot": chart_spot,
-			"marker": chart_marker, "carrier": chart_carrier, "dropped": chart_dropped}}
+			"marker": chart_marker, "carrier": chart_carrier, "dropped": chart_dropped,
+			"fort": fort, "fort_gate": fort_gate, "fort_chests": fort_chests}}
 
 ## Puts a saved game back. The characters must already have been built from
 ## the saved people, in the same order.
@@ -843,6 +855,10 @@ func load_state(d: Dictionary) -> void:
 		chart_dropped = g.get("dropped", Vector2i(-1, -1)) if g.get("dropped") is Vector2i else Vector2i(-1, -1)
 		var carrier := int(g.get("carrier", -1))
 		_set_chart_carrier(carrier if carrier < characters.size() else -1)
+		fort = g.get("fort") if g.get("fort") is Vector2i else Vector2i(-1, -1)
+		fort_gate = g.get("fort_gate") if g.get("fort_gate") is Vector2i else Vector2i(-1, -1)
+		fort_chests = clampi(int(g.get("fort_chests", 0)), 0, 20) if fort.x >= 0 else 0
+		chests_total = _base_chests + fort_chests
 	_hotseat_view = clampi(int(d.get("view", current_team)), 0, team_count - 1)
 	if is_person(current_team):
 		_hotseat_view = current_team
@@ -973,6 +989,25 @@ static func _goal_named(kind: String) -> String:
 func settle_resumed() -> bool:
 	return is_authority and not won and started and _check_victory()
 
+## A stronghold goes up: its hoard lies on the ground at `hoard` (one chest a
+## square), and counts towards the island's chests.
+func setup_fort(center: Vector2i, gate: Vector2i, hoard: Array) -> void:
+	fort = center
+	fort_gate = gate
+	for cell in hoard:
+		dropped[cell] = int(dropped.get(cell, 0)) + 1
+	fort_chests = hoard.size()
+	chests_total = _base_chests + fort_chests
+	holes_changed.emit() # the overlay draws chests on the ground
+	goal_changed.emit()
+
+## Inside the stronghold's fence.
+func in_fort(cell: Vector2i) -> bool:
+	if fort.x < 0:
+		return false
+	var gap: Vector2i = (cell - fort).abs()
+	return maxi(gap.x, gap.y) < Campaign.FORT_RADIUS
+
 ## Double rest for a NAVS sailor at the outpost (within a square of it).
 func rest_bonus(c: Character) -> float:
 	if outpost.x < 0 or not allies(c.team, NAVS):
@@ -1055,7 +1090,7 @@ func _free_captive(c: Character) -> void:
 	held.stance = Character.Stance.STANDING
 	held.position = Character.cell_to_pos(held.cell)
 	_clear_path(c)
-	_sfx(AudioManifest.TAKE_CARRY, NAVS)
+	_sfx(AudioManifest.TAKE_CARRY, NAVS, held)
 	announce(NAVS, "%s cut %s free! Now get her aboard your ship." % [c.stats.person_name, held.stats.person_name])
 	goal_changed.emit()
 	_refresh_vision()
@@ -1116,7 +1151,7 @@ func _offer_chest(team: int, from: Character, to: Character) -> bool:
 	_clear_path(to)
 	offer = {"from": from.id, "to": to.id}
 	offer_changed.emit()
-	_sfx(AudioManifest.OFFER_CARRY, team)
+	_sfx(AudioManifest.OFFER_CARRY, team, to)
 	announce(team, "%s: \"You want me to carry the treasure?\"" % to.stats.person_name)
 	_mark()
 	return true
@@ -1201,10 +1236,10 @@ func request_handoff(team: int, accept: bool) -> void:
 		if to.team == team:
 			active_by_team[team] = to
 		selection_changed.emit()
-		_sfx(AudioManifest.TAKE_CARRY, team)
+		_sfx(AudioManifest.TAKE_CARRY, team, to)
 		announce(team, "%s: \"I'll carry it now.\"" % to.stats.person_name)
 		if to.team != team:
-			_sfx(AudioManifest.TAKE_CARRY, to.team)
+			_sfx(AudioManifest.TAKE_CARRY, to.team, to)
 			announce(to.team, "The %s handed %s a chest. Take it to your ship, or theirs." % [TEAM_NAMES[team], to.stats.person_name])
 	else:
 		announce(team, "%s keeps the chest." % from.stats.person_name)
@@ -1285,6 +1320,8 @@ func _tick_duel(delta: float) -> void:
 func _resolve_duel() -> void:
 	var a := characters[int(duel.a)]
 	var d := characters[int(duel.d)]
+	var ta := int(a.team) # before anyone comes over to the other side
+	var td := int(d.team)
 	var ac := int(duel.ac)
 	var dc := int(duel.dc)
 	var ea := a.energy
@@ -1308,15 +1345,71 @@ func _resolve_duel() -> void:
 		var l := d if attacker_wins else a
 		tally[w.id].captures += 1
 		tally[l.id].lost += 1
-		text += "%s captured %s%s!" % [w.stats.person_name, l.stats.person_name, _capture(l, w)]
+		var turn_chance := _defect_chance(l, w)
+		if turn_chance > 0.0 and rng.randf() < turn_chance:
+			text += "%s beat %s, who threw down their sword and came over to the %s%s!" % [
+				w.stats.person_name, l.stats.person_name, TEAM_NAMES[w.team], _defect(l, w)]
+		else:
+			text += "%s captured %s%s!" % [w.stats.person_name, l.stats.person_name, _capture(l, w)]
 	_end_duel()
 	duel_seq += 1
 	duel_text = text
-	duel_teams = [int(a.team), int(d.team)]
-	announce(a.team, text)
-	announce(d.team, text)
+	duel_teams = [ta, td]
+	announce(ta, text)
+	announce(td, text)
 	duel_resolved.emit(text)
 	_check_wipeout()
+
+## Vega sailing with you (campaign islands after Gallows Rock): a rival the
+## NAVS beat in a fight may come over to them instead of being captured.
+## The odds are best when Vega wins the fight herself, good when she's close
+## by, and a long shot otherwise; posted guards are half as easy to turn.
+const DEFECT_BY_VEGA := 0.40
+const DEFECT_NEAR_VEGA := 0.25
+const DEFECT_NEAR := 4 ## squares from the fight that count as close by
+const DEFECT_ANYWHERE := 0.10
+var defections := false
+
+func _defect_chance(loser: Character, winner: Character) -> float:
+	if not defections or winner.team != NAVS or allies(loser.team, NAVS) or loser.captive:
+		return 0.0
+	var chance := 0.0
+	for c in _members(NAVS):
+		if not c.stats.charismatic():
+			continue
+		var gap: Vector2i = (c.cell - loser.cell).abs()
+		if c == winner:
+			chance = maxf(chance, DEFECT_BY_VEGA)
+		elif maxi(gap.x, gap.y) <= DEFECT_NEAR:
+			chance = maxf(chance, DEFECT_NEAR_VEGA)
+		else:
+			chance = maxf(chance, DEFECT_ANYWHERE)
+	if posts.has(loser.id):
+		chance *= 0.5
+	return chance
+
+## `loser` comes over to `winner`'s crew where they stand, keeping any chest
+## they hold (it's the NAVS' to take aboard now). Returns a phrase to finish
+## the result line.
+func _defect(loser: Character, winner: Character) -> String:
+	var old := loser.team
+	loser.fighting = false
+	loser.digging = false
+	_clear_path(loser)
+	posts.erase(loser.id)
+	guards.erase(loser.id)
+	if active_by_team[old] == loser:
+		active_by_team[old] = null
+	loser.join_team(winner.team)
+	loser.turncoat = true
+	loser.stance = Character.Stance.STANDING
+	winner.stats.confidence = minf(winner.stats.confidence + Combat.CONFIDENCE_FOR_WIN, 100.0)
+	_sfx(AudioManifest.YOUR_TURN, winner.team, loser) # "Aye, captain!"
+	selection_changed.emit()
+	_refresh_vision()
+	fog_changed.emit()
+	var vega_won := winner.stats.charismatic()
+	return (", won round by %s" % winner.stats.person_name) if vega_won else (" with a chest" if loser.carrying else "")
 
 ## Takes `loser` off the island, leaving a sword-and-hat marker. Any chest they
 ## carried goes to the winner — or, if the winner's hands are full, drops where
@@ -1345,7 +1438,7 @@ func _capture(loser: Character, winner_c: Character) -> String:
 	var had_chart := loser.id == chart_carrier
 	if not winner_c.carrying:
 		winner_c.set_carrying(true)
-		_sfx(AudioManifest.TREASURE, winner_c.team)
+		_sfx(AudioManifest.TREASURE, winner_c.team, winner_c)
 		if had_chart:
 			_set_chart_carrier(winner_c.id)
 			return " and took the Star Chart"
@@ -1426,7 +1519,7 @@ func _end_dig(c: Character) -> void:
 		c.set_carrying(true)
 		tally[c.id].found += 1
 		c.stats.confidence = minf(c.stats.confidence + 10.0, 100.0) # digging builds confidence
-		_sfx(AudioManifest.TREASURE, c.team)
+		_sfx(AudioManifest.TREASURE, c.team, c)
 		if cell == chart_spot:
 			chart_spot = Vector2i(-1, -1)
 			_set_chart_carrier(c.id)
@@ -1450,13 +1543,15 @@ func _marker_has_chest(marker: Vector2i) -> bool:
 func _check_pickup(c: Character, cell: Vector2i) -> void:
 	if c.carrying or not dropped.has(cell):
 		return
+	if in_fort(cell) and not allies(c.team, NAVS):
+		return # the stronghold's hoard stays where it is (a guard chasing someone walks over it)
 	dropped[cell] = int(dropped[cell]) - 1
 	if int(dropped[cell]) <= 0:
 		dropped.erase(cell)
 	c.set_carrying(true)
 	tally[c.id].found += 1
 	holes_changed.emit()
-	_sfx(AudioManifest.TREASURE, c.team)
+	_sfx(AudioManifest.TREASURE, c.team, c)
 	if cell == chart_dropped:
 		chart_dropped = Vector2i(-1, -1)
 		_set_chart_carrier(c.id)
@@ -1759,8 +1854,11 @@ func _default_status(t: int) -> String:
 	return "Click a destination, SPACE to dig, ENTER to end the turn."
 
 ## Plays a sound for one team (or everyone with -1) on whichever machine that
-## team is being played.
-func _sfx(path: String, team := -1) -> void:
+## team is being played. A line a sailor speaks is said in their own voice
+## (`speaker`'s CharacterStats.voice(): Vega's is higher).
+func _sfx(path: String, team := -1, speaker: Character = null) -> void:
+	if speaker != null and speaker.stats != null:
+		path = AudioManifest.voiced(path, speaker.stats.voice())
 	if team < 0 or is_local_team(team):
 		AudioManager.play(path)
 	if _hosting():

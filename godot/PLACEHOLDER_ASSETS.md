@@ -39,6 +39,19 @@ with a garbage length field, which made Godot warn on import. The game's copies
 have that 32-byte note removed. Their sound data is byte-identical to the
 originals in `../../audio/`, which are left as they shipped.
 
+## Vega's voice (`assets/audio/sfx/voice_high/`)
+Vega is a woman, but the four lines a sailor speaks (`Treasure.WAV`,
+`AyeCapt.WAV`, `TCWantMe.wav`, `TC_trans.wav`) were recorded by a man. She
+speaks higher versions of them, derived from the placeholders above, so the
+same rule applies. Made 2026-11-05 by `tools/make_vega_voice.py` with Praat's
+Change Gender (pitch-synchronous, which stays smooth where a phase vocoder
+sounded robotic): a middle pitch of 230 Hz (265 for the rising question),
+formants raised 27%, intonation 18% wider, length unchanged. The settings
+were picked by ear from several rounds of comparisons.
+
+When the placeholders are replaced, record Vega's lines with a voice actor
+rather than re-deriving them.
+
 ## Music
 The original 11 `.mid` music tracks are **not** wired in yet — Godot can't play
 MIDI natively. Milestone 2 adds a render step (fluidsynth + a free soundfont →

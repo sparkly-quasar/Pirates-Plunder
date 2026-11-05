@@ -189,7 +189,8 @@ func _team_table(team: int, winner: int) -> Control:
 			if n == 0:
 				cell.modulate = Color(1, 1, 1, 0.35)
 			grid.add_child(cell)
-		var fate := "Captured" if bool(p.captured) else ("Holding a chest" if bool(p.get("carrying", false)) else "")
+		var fate := "Captured" if bool(p.captured) else ("Holding a chest" if bool(p.get("carrying", false)) \
+			else ("Came over" if bool(p.get("turncoat", false)) else ""))
 		var f := _label(fate, 13)
 		f.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45) if bool(p.captured) else Color(1.0, 0.87, 0.55))
 		grid.add_child(f)
