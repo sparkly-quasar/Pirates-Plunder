@@ -11,12 +11,36 @@ extends Node2D
 
 const TILE := 32
 
+## Painted tiles for woods, thickets, hills and swamp (assets/terrain/, drawn
+## for the game with Google Gemini from a screenshot of it), a few of each so
+## the map doesn't repeat. Each square picks one from its position, so it's
+## always the same one. Anything without a painting is drawn by hand below.
+const PAINTED := {
+	TerrainGrid.TREES: ["woods_1", "woods_2", "woods_3"],
+	TerrainGrid.BUSH: ["thicket_1", "thicket_2", "thicket_3", "thicket_4"],
+	TerrainGrid.HILL: ["hill_1", "hill_2", "hill_3", "hill_4"],
+	TerrainGrid.SWAMP: ["swamp_1", "swamp_2", "swamp_3", "swamp_4"],
+}
+var _paintings := {} # kind -> [Texture2D]
+
 var grid: TerrainGrid
+
+func _ready() -> void:
+	# The paintings are bigger than a square, so shrink them smoothly.
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	for kind in PAINTED:
+		var list: Array[Texture2D] = []
+		for n in PAINTED[kind]:
+			var path := "res://assets/terrain/%s.png" % n
+			if ResourceLoader.exists(path):
+				list.append(load(path))
+		_paintings[kind] = list
 
 func _draw() -> void:
 	for y in grid.height:
 		for x in grid.width:
 			_draw_tile(Vector2i(x, y))
+
 	# A faint grid, as the original has.
 	var line := Color(0, 0, 0, 0.07)
 	for x in grid.width + 1:
@@ -27,6 +51,19 @@ func _draw() -> void:
 func _draw_tile(c: Vector2i) -> void:
 	var o := Vector2(c.x * TILE, c.y * TILE)
 	var t := grid.tile_type(c)
+	var paintings: Array = _paintings.get(t, [])
+	if not paintings.is_empty():
+		# The ground under the painting: meadow round a hill, deep shade under
+		# woods and thickets (so the gaps between the trees read as shade).
+		match t:
+			TerrainGrid.TREES: _fill(o, Color(0.06, 0.12, 0.06))
+			TerrainGrid.BUSH: _fill(o, Color(0.12, 0.22, 0.09))
+			TerrainGrid.HILL:
+				_fill(o, Color(0.55, 0.66, 0.24))
+				_grass(c, o)
+		var pick := int(_r(c, 7) * paintings.size()) % paintings.size()
+		draw_texture_rect(paintings[pick], Rect2(o, Vector2(TILE, TILE)), false)
+		return
 	match t:
 		TerrainGrid.WATER:
 			_fill(o, Color(0.13, 0.34, 0.55))
@@ -38,8 +75,9 @@ func _draw_tile(c: Vector2i) -> void:
 			_fill(o, Color(0.55, 0.66, 0.24))
 			_grass(c, o)
 		TerrainGrid.BUSH:
-			_fill(o, Color(0.52, 0.62, 0.23))
-			_grass(c, o)
+			# A thicket is as solid as woodland: a tangle of bushes filling the
+			# square, not a couple of clumps on open grass.
+			_fill(o, Color(0.20, 0.33, 0.13))
 			_bushes(c, o)
 		TerrainGrid.TREES:
 			# Solid woodland — you go around it, so it's drawn as a dense,
@@ -47,10 +85,12 @@ func _draw_tile(c: Vector2i) -> void:
 			_fill(o, Color(0.14, 0.27, 0.13))
 			_trees(c, o)
 		TerrainGrid.SWAMP:
-			_fill(o, Color(0.35, 0.37, 0.23))
+			# Wet ground you can wade through: olive mud with pools of water.
+			_fill(o, Color(0.42, 0.44, 0.27))
 			_swamp(c, o)
 		TerrainGrid.HILL:
-			_fill(o, Color(0.52, 0.60, 0.26))
+			# High ground, in earth colours so it stands out from the meadow.
+			_fill(o, Color(0.63, 0.58, 0.36))
 			_hill(c, o)
 		TerrainGrid.FENCE:
 			_fill(o, Color(0.55, 0.66, 0.24))
@@ -88,13 +128,18 @@ func _waves(c: Vector2i, o: Vector2) -> void:
 		var x: float = o.x + 3.0 + _r(c, i + 70) * 10.0
 		draw_line(Vector2(x, y), Vector2(x + 9.0, y), Color(0.30, 0.52, 0.72, 0.75), 1.0)
 
-## Bushes: a couple of low rounded clumps.
+## A thicket: low bushes packed edge to edge across the square, with a few
+## thorny twigs, lighter and lower than the woods' tall canopies.
 func _bushes(c: Vector2i, o: Vector2) -> void:
-	for i in 2:
-		var p := o + Vector2(7.0 + _r(c, i + 80) * 18.0, 9.0 + _r(c, i + 90) * 14.0)
-		var r: float = 4.0 + _r(c, i + 100) * 2.0
-		draw_circle(p, r, Color(0.20, 0.38, 0.16))
-		draw_circle(p + Vector2(-1, -1.5), r * 0.6, Color(0.29, 0.49, 0.21))
+	for i in 6:
+		var p := o + Vector2(6.0 + (i % 3) * 10.0 + _r(c, i + 80) * 3.0, 9.0 + int(i / 3) * 13.0 + _r(c, i + 90) * 3.0)
+		var r: float = 5.5 + _r(c, i + 100) * 1.5
+		draw_circle(p + Vector2(0.5, 1.5), r, Color(0.10, 0.19, 0.07))      # shade
+		draw_circle(p, r, Color(0.28, 0.45, 0.17))
+		draw_circle(p + Vector2(-1.2, -1.6), r * 0.55, Color(0.40, 0.58, 0.24)) # lit top
+	for i in 4:
+		var p := o + Vector2(4.0 + _r(c, i + 105) * 24.0, 5.0 + _r(c, i + 106) * 22.0)
+		draw_line(p, p + Vector2(2.5, -2.0), Color(0.42, 0.30, 0.16), 1.0)  # twigs
 
 ## Dense woodland: overlapping canopies that fill the square, so it reads as a
 ## wall of trees you have to walk around.
@@ -108,31 +153,71 @@ func _trees(c: Vector2i, o: Vector2) -> void:
 		draw_circle(canopy + Vector2(-1.0, -1.6), 5.4, Color(0.16, 0.38, 0.17))
 		draw_circle(canopy + Vector2(-2.0, -2.8), 2.8, Color(0.26, 0.54, 0.23)) # lit top
 
-## Swamp: murky blotches and a few reeds.
+## Swamp: pools of murky water in the mud, with reeds standing out of them.
+## Open, but slow: it's ground, not a wall.
 func _swamp(c: Vector2i, o: Vector2) -> void:
 	for i in 3:
-		var p := o + Vector2(_r(c, i + 130) * TILE, _r(c, i + 140) * TILE)
-		draw_circle(p, 4.0 + _r(c, i + 150) * 3.0, Color(0.26, 0.30, 0.20))
-	for i in 4:
-		var p := o + Vector2(4.0 + _r(c, i + 160) * 24.0, 10.0 + _r(c, i + 170) * 18.0)
-		draw_line(p, p + Vector2(0.8, -5.0), Color(0.44, 0.47, 0.26), 1.0)
+		var p := o + Vector2(6.0 + _r(c, i + 130) * 20.0, 6.0 + _r(c, i + 140) * 20.0)
+		var rx: float = 4.5 + _r(c, i + 150) * 3.0
+		_ellipse(p, rx, rx * 0.6, Color(0.27, 0.40, 0.38))
+		_ellipse(p + Vector2(-1.0, -0.8), rx * 0.55, rx * 0.25, Color(0.45, 0.58, 0.55)) # glint
+	for i in 6:
+		var p := o + Vector2(3.0 + _r(c, i + 160) * 26.0, 9.0 + _r(c, i + 170) * 20.0)
+		var h: float = 4.0 + _r(c, i + 175) * 3.0
+		draw_line(p, p + Vector2(0.8, -h), Color(0.30, 0.34, 0.16), 1.2)
+		draw_line(p + Vector2(0.8, -h), p + Vector2(0.9, -h - 1.5), Color(0.45, 0.32, 0.18), 2.0) # bulrush
 
 ## High ground: a grassy mound with a lit crest, a shadowed base and a couple of
 ## outcrops, so it reads as a HILL you can climb (and see further from) rather
 ## than an unexplained grey block.
 func _hill(c: Vector2i, o: Vector2) -> void:
 	var mid := o + Vector2(TILE * 0.5, TILE * 0.5)
-	# Shadowed skirt, then the mound, then the sunlit crest.
-	_ellipse(mid + Vector2(0, 5.0), 15.0, 9.0, Color(0.38, 0.45, 0.20))
-	_ellipse(mid + Vector2(0, 2.0), 13.0, 8.0, Color(0.50, 0.58, 0.25))
-	_ellipse(mid + Vector2(-1.5, -1.5), 8.5, 5.0, Color(0.62, 0.69, 0.33))
-	_ellipse(mid + Vector2(-2.5, -3.5), 4.2, 2.4, Color(0.72, 0.77, 0.42))
+	# Shadowed skirt, then the mound, then the sunlit crest, in earth tones,
+	# with contour lines like a chart's so it reads as a rise.
+	_ellipse(mid + Vector2(0, 5.0), 15.5, 9.5, Color(0.46, 0.41, 0.24))
+	_ellipse(mid + Vector2(0, 2.0), 13.0, 8.0, Color(0.66, 0.60, 0.37))
+	_ring(mid + Vector2(0, 2.0), 13.0, 8.0, Color(0.42, 0.36, 0.20, 0.8))
+	_ellipse(mid + Vector2(-1.5, -1.5), 8.5, 5.0, Color(0.76, 0.70, 0.46))
+	_ring(mid + Vector2(-1.5, -1.5), 8.5, 5.0, Color(0.48, 0.42, 0.24, 0.7))
+	_ellipse(mid + Vector2(-2.5, -3.5), 4.2, 2.4, Color(0.86, 0.81, 0.58))
 	# A rock or two breaking the surface marks it as a ridge.
 	for i in 2:
 		var p := o + Vector2(7.0 + _r(c, i + 180) * 17.0, 9.0 + _r(c, i + 190) * 13.0)
 		var w: float = 4.0 + _r(c, i + 200) * 3.0
 		_ellipse(p, w, w * 0.55, Color(0.52, 0.50, 0.46))
 		_ellipse(p - Vector2(0, 1.0), w * 0.6, w * 0.3, Color(0.68, 0.66, 0.62))
+
+func _ring(center: Vector2, rx: float, ry: float, col: Color) -> void:
+	var pts := PackedVector2Array()
+	for i in 21:
+		var a := TAU * i / 20.0
+		pts.append(center + Vector2(cos(a) * rx, sin(a) * ry))
+	draw_polyline(pts, col, 1.0)
+
+## Woods, thickets and stockades: you can't walk through them.
+func _solid(c: Vector2i) -> bool:
+	if not grid.in_bounds(c):
+		return false
+	var t := grid.tile_type(c)
+	return t == TerrainGrid.TREES or t == TerrainGrid.BUSH or t == TerrainGrid.FENCE
+
+## A solid square stands up: its shadow falls on open ground below and to the
+## right, and a dark rim runs along every side that meets open ground.
+func _raise(c: Vector2i) -> void:
+	var o := Vector2(c.x * TILE, c.y * TILE)
+	var shade := Color(0.0, 0.0, 0.0, 0.28)
+	var down := c + Vector2i(0, 1)
+	if grid.in_bounds(down) and grid.is_walkable(down):
+		draw_rect(Rect2(o.x + 2, o.y + TILE, TILE - 2, 5), shade)
+	var right := c + Vector2i(1, 0)
+	if grid.in_bounds(right) and grid.is_walkable(right):
+		draw_rect(Rect2(o.x + TILE, o.y + 3, 4, TILE - 3), shade)
+	var rim := Color(0.05, 0.09, 0.04, 0.9)
+	for side in [[Vector2i(0, -1), Vector2(0, 0), Vector2(TILE, 0)], [Vector2i(0, 1), Vector2(0, TILE), Vector2(TILE, TILE)],
+			[Vector2i(-1, 0), Vector2(0, 0), Vector2(0, TILE)], [Vector2i(1, 0), Vector2(TILE, 0), Vector2(TILE, TILE)]]:
+		var n: Vector2i = c + side[0]
+		if grid.in_bounds(n) and grid.is_walkable(n):
+			draw_line(o + side[1], o + side[2], rim, 2.0)
 
 func _ellipse(center: Vector2, rx: float, ry: float, col: Color) -> void:
 	var pts := PackedVector2Array()

@@ -8,7 +8,7 @@ config_version=5
 
 config/name="Pirates Plunder"
 config/description="A turn-based treasure hunt for one or two players, inspired by Richard Carr's Treasure Island (1996)."
-config/version="0.16.3"
+config/version="0.16.4"
 run/main_scene="res://scenes/Menu.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 config/icon="res://icon.png"
