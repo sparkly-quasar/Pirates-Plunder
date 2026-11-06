@@ -12,6 +12,10 @@ extends Node
 ##  - On the island, the map is tapped, dragged and pinched, and a bar of
 ##    buttons stands in for the keys (Main and PlayerController ask
 ##    `enabled`).
+##  - Any list that scrolls (the coaching screen, the campaign, the server
+##    list...) scrolls with a finger dragged anywhere on it, buttons included,
+##    and glides on after a flick. A drag never presses the button it began
+##    on; a tap still does.
 ##  - Typing (a name, a chat line, a server address): the text cursor is
 ##    thick, bright and doesn't blink, and a strip across the top of the
 ##    screen shows what you're typing with the cursor in it, above the
@@ -140,6 +144,7 @@ func _process(delta: float) -> void:
 	if not enabled:
 		return
 	_update_typing_strip()
+	_glide(delta)
 	var scene := get_tree().current_scene
 	if scene == null:
 		return
@@ -251,3 +256,109 @@ static func typing_text(field: LineEdit) -> String:
 		return "|  " + field.placeholder_text
 	var at := clampi(field.caret_column, 0, words.length())
 	return words.left(at) + "|" + words.substr(at)
+
+# --- lists dragged with a finger -------------------------------------------------
+
+## How far a finger moves (up or down, more than sideways) before it's a
+## scroll and not a tap.
+const DRAG_START := 12.0
+## A motion sent where nothing is, to tell the button under the finger it's
+## no longer being pressed (so letting go doesn't press it).
+const AWAY := Vector2(-100000, -100000)
+
+var _drag_box: ScrollContainer = null
+var _drag_from := Vector2.ZERO
+var _dragging := false
+var _drag_rest := 0.0
+var _glide_box: ScrollContainer = null
+var _glide_speed := 0.0
+var _last_drag_us := 0
+
+func _input(event: InputEvent) -> void:
+	if not enabled:
+		return
+	if event is InputEventScreenTouch and event.index == 0:
+		if event.pressed:
+			_glide_box = null
+			_drag_box = scroll_at(event.position)
+			_drag_from = event.position
+			_dragging = false
+			_drag_rest = 0.0
+			_glide_speed = 0.0
+			_last_drag_us = 0
+		else:
+			# A flick carries on a little; a finger that stopped before
+			# letting go doesn't.
+			if _dragging and is_instance_valid(_drag_box) and Time.get_ticks_usec() - _last_drag_us < 120000:
+				_glide_box = _drag_box
+			_drag_box = null
+			_dragging = false
+	elif event is InputEventScreenDrag and event.index == 0 and _drag_box != null:
+		if not is_instance_valid(_drag_box):
+			_drag_box = null
+			return
+		if not _dragging:
+			var moved: Vector2 = event.position - _drag_from
+			if absf(moved.y) >= DRAG_START and absf(moved.y) > absf(moved.x):
+				_dragging = true
+				_let_go_of_button()
+				event = event.duplicate()
+				event.relative = Vector2(0, moved.y) # the distance before it counted
+		if _dragging:
+			_drag_rest -= event.relative.y
+			var whole := roundi(_drag_rest)
+			_drag_box.scroll_vertical += whole
+			_drag_rest -= whole
+			# How fast the finger is going, smoothed (Godot's own figure isn't
+			# always filled in).
+			var now := Time.get_ticks_usec()
+			var dt := clampf((now - _last_drag_us) / 1000000.0, 0.004, 0.1) if _last_drag_us > 0 else 0.016
+			_glide_speed = lerpf(_glide_speed, -event.relative.y / dt, 0.6)
+			_last_drag_us = now
+			get_viewport().set_input_as_handled()
+	elif _dragging and event is InputEventMouseMotion and event.position != AWAY:
+		# The mouse Godot makes from the finger: keep it away from the button
+		# it started on, so letting go doesn't press it.
+		get_viewport().set_input_as_handled()
+
+## The finger began on a button and has turned into a scroll: move the
+## pretend mouse off it, so the button stops looking pressed and letting go
+## doesn't press it.
+func _let_go_of_button() -> void:
+	var away := InputEventMouseMotion.new()
+	away.position = AWAY
+	away.global_position = AWAY
+	away.button_mask = MOUSE_BUTTON_MASK_LEFT
+	Input.parse_input_event(away)
+
+## After a flick, the list carries on and slows to a stop.
+func _glide(delta: float) -> void:
+	if _glide_box == null:
+		return
+	if not is_instance_valid(_glide_box) or not _glide_box.is_visible_in_tree() or absf(_glide_speed) < 30.0:
+		_glide_box = null
+		return
+	var before := _glide_box.scroll_vertical
+	_glide_box.scroll_vertical += roundi(_glide_speed * delta)
+	_glide_speed *= pow(0.04, delta) # most of the speed gone within a second
+	if _glide_box.scroll_vertical == before and absf(_glide_speed * delta) >= 1.0:
+		_glide_box = null # at the end of the list
+
+## The innermost list under `pos` that has more to show than fits, or null.
+func scroll_at(pos: Vector2) -> ScrollContainer:
+	var best: ScrollContainer = null
+	var best_depth := -1
+	for n in get_tree().root.find_children("*", "ScrollContainer", true, false):
+		var box := n as ScrollContainer
+		if box == null or not box.is_visible_in_tree() or box.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_DISABLED:
+			continue
+		var bar := box.get_v_scroll_bar()
+		if bar == null or bar.max_value - bar.page <= 0.5:
+			continue
+		if not box.get_global_rect().has_point(pos):
+			continue
+		var depth := box.get_path().get_name_count()
+		if depth > best_depth:
+			best = box
+			best_depth = depth
+	return best

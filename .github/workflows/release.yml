@@ -30,6 +30,9 @@ env:
 
 jobs:
   release:
+    # Releases are made on the public repository only, where building is
+    # free. The private development copy of this workflow skips itself.
+    if: github.repository == 'sparkly-quasar/Pirates-Plunder'
     # The current macOS machine: GitHub retires the numbered ones (macos-14
     # stopped being offered in November 2026, and every run was cancelled).
     runs-on: macos-latest
