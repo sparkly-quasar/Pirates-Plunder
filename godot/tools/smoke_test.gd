@@ -1262,6 +1262,23 @@ func _test_campaign() -> void:
 	_check(game.settle_resumed() and game.won and game.winner == N, "chests: a resumed game already won ends at once")
 	_free_game(game)
 
+	# A bigger energy tank with stamina: Vega goes further in a turn.
+	var vega_st := Campaign.make_vega()
+	_check(is_equal_approx(vega_st.max_energy(), 130.0) and is_equal_approx(CharacterStats.make(CharacterStats.Kind.FIGHTER).max_energy(), 100.0)
+		and is_equal_approx(CharacterStats.make(CharacterStats.Kind.SWORDSMAN).max_energy(), 100.0),
+		"energy: Vega (stamina 80) holds 130, an average sailor 100, and poor stamina never less than 100")
+	_check(is_equal_approx(vega_st.combat_strength(130.0), vega_st.combat_strength(100.0)), "energy: past 100 it doesn't add to a fight")
+	g = TerrainGrid.new(4242)
+	game = _computer_game(g)
+	var runner_c: Character = game._members(N)[2]
+	_check(runner_c.stats.kind == CharacterStats.Kind.RUNNER and is_equal_approx(runner_c.energy, runner_c.stats.max_energy()) and runner_c.energy > 100.0,
+		"energy: a Runner (great stamina) lands with a full, bigger tank (%d)" % roundi(runner_c.energy))
+	runner_c.energy = 10.0
+	game._pass_turn(N)
+	game._pass_turn(P)
+	_check(runner_c.energy > 10.0 and runner_c.energy <= runner_c.stats.max_energy() + 0.01, "energy: resting fills it up to that tank, no further")
+	_free_game(game)
+
 	# A flag on the X once your crew digs up its chest, for your side only.
 	g = TerrainGrid.new(4242)
 	game = _computer_game(g)

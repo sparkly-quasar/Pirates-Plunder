@@ -14,7 +14,9 @@ const POOR := 15.0
 const AVERAGE := 30.0
 const EXCELLENT := 60.0
 
-const MAX_ENERGY := 100.0
+const MAX_ENERGY := 100.0  ## an average sailor's full tank (see max_energy())
+## Energy tank per point of stamina above average: Vega (80) holds 130.
+const TANK_PER_STAMINA := 0.6
 const DIG_COST := 35.0        ## energy to dig...
 const DIG_COST_DIGGER := 12.0 ## ...unless you're the Digger
 const ATTACK_MIN_ENERGY := 25.0
@@ -87,9 +89,18 @@ func dig_cost() -> float:
 ##   CS = (Sword + C + Sword*C/100) * ET/100
 func combat_strength(energy: float) -> float:
 	var t := team_spirit / 5.0
-	var et: float = maxf(energy, t)
+	# A bigger tank is for going further, not hitting harder: past 100, energy
+	# doesn't add to a fight.
+	var et: float = maxf(minf(energy, MAX_ENERGY), t)
 	var c := confidence / 10.0
 	return (swordfighting + c + swordfighting * c / 100.0) * et / 100.0
+
+## The most energy this sailor can hold: 100, and more with stamina above
+## average, so a sailor with great stamina goes further in a turn as well as
+## resting quicker (Vega, stamina 80: 130; an Excellent 60: 118). Nobody
+## holds less than 100.
+func max_energy() -> float:
+	return MAX_ENERGY + maxf(0.0, stamina - AVERAGE) * TANK_PER_STAMINA
 
 ## Combat strength when fully rested — sets the height of the bar's frame.
 func max_combat_strength() -> float:

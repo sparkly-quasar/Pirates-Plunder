@@ -95,7 +95,7 @@ func setup(start_cell: Vector2i, character_stats: CharacterStats, side: Team = T
 	if stats != null and stats.special == Campaign.SPECIAL_VEGA:
 		team_color = VEGA_GOLD # the fleet's finest navigator, in gold
 		hat_stripe = Color(1.0, 0.86, 0.35)
-	energy = CharacterStats.MAX_ENERGY
+	energy = stats.max_energy() if stats != null else CharacterStats.MAX_ENERGY
 	position = cell_to_pos(start_cell)
 
 ## Changes sides where they stand (a pirate won over by Vega): the new crew's

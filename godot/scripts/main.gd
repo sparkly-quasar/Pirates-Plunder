@@ -857,9 +857,9 @@ func _update_info() -> void:
 	var storm := c.team == v and _storm_island()
 	if server.rest_bonus(c) > 1.0:
 		storm = false
-	var sailor := "%s the %s (%s)   Energy %d (+%d a turn%s)   Combat %d" % [
+	var sailor := "%s the %s (%s)   Energy %d/%d (+%d a turn%s)   Combat %d" % [
 		c.stats.person_name, c.stats.class_name_, stance_name,
-		roundi(c.energy), roundi(rest), ", storm" if storm else (", outpost" if server.rest_bonus(c) > 1.0 else ""), roundi(c.combat_strength())]
+		roundi(c.energy), roundi(c.stats.max_energy()), roundi(rest), ", storm" if storm else (", outpost" if server.rest_bonus(c) > 1.0 else ""), roundi(c.combat_strength())]
 	if Touch.enabled:
 		# What it takes to win first, where a narrow screen can't cut it off.
 		info_label.text = "%s   |   %s   |   %s" % [turn_text, chests, sailor]

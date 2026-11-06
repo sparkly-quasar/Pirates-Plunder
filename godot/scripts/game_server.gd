@@ -729,7 +729,7 @@ func _pass_turn(team: int) -> void:
 	else:
 		turn += 1
 	for c in _members(current_team):
-		c.energy = minf(c.energy + c.stats.stamina * float(rest_scale[current_team]) * rest_bonus(c), CharacterStats.MAX_ENERGY)
+		c.energy = minf(c.energy + c.stats.stamina * float(rest_scale[current_team]) * rest_bonus(c), c.stats.max_energy())
 	reset_turn_clock()
 	turn_changed.emit()
 	_refresh_vision()
