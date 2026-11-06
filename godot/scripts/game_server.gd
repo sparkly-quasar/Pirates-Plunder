@@ -78,6 +78,14 @@ var active_by_team: Array = [null, null, null, null]
 var current_team: int = NAVS
 
 var x_markers: Array[Vector2i] = [] # Treasure Chest Markers (the red X's)
+## Per crew, the X's whose chest that crew dug up: {marker: true}. Each crew
+## (and its 2v2 partner) sees a flag of its own on them (FogView).
+var found_x: Array = []
+## Per crew, other crews' flags its Scouts have set eyes on: {marker: finder}.
+## Only a Scout notices another crew's flag; once seen, the side remembers it.
+var spotted_flags: Array = []
+var _finder_of := {}      # marker -> the crew that dug up its chest
+var _shown_flags: Array = [] # a guest: the flags the host says we see
 var buried: Dictionary = {}         # dig cell -> marker it belongs to (unfound only)
 var dropped: Dictionary = {}        # cell -> chests lying there, dropped by a captured carrier
 var ships: Array[Vector2i] = []
@@ -222,6 +230,12 @@ func setup(_grid: TerrainGrid, people: Array[Character]) -> void:
 	# The island decides where its own landmarks go — it's generated, so nothing
 	# can be hard-coded to fixed coordinates any more.
 	x_markers = grid.markers.duplicate()
+	found_x = []
+	spotted_flags = []
+	_finder_of = {}
+	for t in team_count:
+		found_x.append({})
+		spotted_flags.append({})
 	ships.clear()
 	for t in team_count:
 		ships.append(grid.ships[t] if t < grid.ships.size() else grid.ships[0])
@@ -786,6 +800,8 @@ func save_state() -> Dictionary:
 		act.append(active_by_team[t].id if active_by_team[t] != null else -1)
 		fog.append(_pack(revealed[t]))
 	return {"people": people, "buried": hidden, "dropped": _drops(), "dug": dug_cells, "captures": captures, "tally": tally,
+		"found": found_x.map(func(f: Dictionary) -> Array: return f.keys()),
+		"spotted": spotted_flags.map(func(f: Dictionary) -> Array: return f.keys().map(func(m: Vector2i) -> Array: return [m, f[m]])),
 		"delivered": delivered, "turn": turn, "cur": current_team, "act": act, "first": first_team,
 		"view": _hotseat_view, "revealed": fog, "goal": {"goal": goal, "captive": captive_id, "guards": guards.keys(), "posts": _posts_list(),
 			"outpost": outpost, "pen": pen, "gate": pen_gate, "spot": chart_spot,
@@ -811,6 +827,7 @@ func load_state(d: Dictionary) -> void:
 		buried[pair[0]] = pair[1]
 	_set_drops(d.get("dropped", []))
 	dug_cells.assign(d.get("dug", []))
+	_set_found(d.get("found", []), d.get("spotted", []))
 	captures = d.get("captures", [])
 	var saved_tally: Array = d.get("tally", [])
 	if saved_tally.size() == characters.size():
@@ -1515,6 +1532,7 @@ func _end_dig(c: Character) -> void:
 				buried.erase(spot)
 				break
 	if buried.has(cell):
+		_note_found(c.team, buried[cell])
 		buried.erase(cell)
 		c.set_carrying(true)
 		tally[c.id].found += 1
@@ -1532,6 +1550,70 @@ func _end_dig(c: Character) -> void:
 		announce(c.team, "Treasure!")
 		return
 	announce(c.team, "Nothing here!")
+
+## A saved game's flags: per crew, the X's it found, and the other crews'
+## flags its Scouts had seen.
+func _set_found(saved: Variant, spotted: Variant = []) -> void:
+	found_x = []
+	spotted_flags = []
+	_finder_of = {}
+	for t in team_count:
+		found_x.append({})
+		spotted_flags.append({})
+	if saved is Array:
+		for t in mini(saved.size(), team_count):
+			if saved[t] is Array:
+				for m in saved[t]:
+					if m is Vector2i:
+						found_x[t][m] = true
+						_finder_of[m] = t
+	if spotted is Array:
+		for t in mini(spotted.size(), team_count):
+			if spotted[t] is Array:
+				for pair in spotted[t]:
+					if pair is Array and pair.size() == 2 and pair[0] is Vector2i and int(pair[1]) >= 0 and int(pair[1]) < team_count:
+						spotted_flags[t][pair[0]] = int(pair[1])
+
+## `team` dug up the chest by X `marker`: their flag goes up on it.
+func _note_found(team: int, marker: Vector2i) -> void:
+	while found_x.size() <= team:
+		found_x.append({})
+	found_x[team][marker] = true
+	_finder_of[marker] = team
+	# A rival Scout watching that X sees the flag go up.
+	for t in _teams():
+		for c in _members(t):
+			if c.stats.kind == CharacterStats.Kind.SCOUT and not allies(t, team) \
+					and grid.visible_from(c.cell, c.vision_points()).has(marker):
+				_spot_flag(t, marker)
+	fog_changed.emit()
+
+## One of `team`'s Scouts sees another crew's flag on `marker`: their whole
+## side knows it from now on.
+func _spot_flag(team: int, marker: Vector2i) -> void:
+	var finder: int = _finder_of.get(marker, -1)
+	if finder < 0 or allies(finder, team):
+		return
+	for o in _teams():
+		if allies(o, team):
+			while spotted_flags.size() <= o:
+				spotted_flags.append({})
+			spotted_flags[o][marker] = finder
+
+## The flags `team` sees on the X's: [marker, the crew that found it]. Its
+## own side's finds, and other crews' that its Scouts have spotted.
+func flags_seen_by(team: int) -> Array:
+	if not is_authority:
+		return _shown_flags
+	var out := []
+	for t in found_x.size():
+		if t < team_count and allies(t, team):
+			for m in found_x[t]:
+				out.append([m, t])
+	if team >= 0 and team < spotted_flags.size():
+		for m in spotted_flags[team]:
+			out.append([m, int(spotted_flags[team][m])])
+	return out
 
 func _marker_has_chest(marker: Vector2i) -> bool:
 	for spot in buried:
@@ -1765,10 +1847,13 @@ func _refresh_vision() -> void:
 	# In 2v2 what a crew sees, its partner sees too.
 	for t in _teams():
 		for c in _members(t):
+			var scout := c.stats.kind == CharacterStats.Kind.SCOUT and not _finder_of.is_empty()
 			for cell in grid.visible_from(c.cell, c.vision_points()):
 				for o in _teams():
 					if allies(o, t):
 						revealed[o][cell] = true
+				if scout and _finder_of.has(cell):
+					_spot_flag(t, cell) # only a Scout notices another crew's flag
 	if not two_teams:
 		return
 	var sight := {} # viewer id -> sight costs, computed once per refresh
@@ -1931,7 +2016,7 @@ func snapshot(team: int = PIRATES) -> Dictionary:
 		"people": people, "act": act, "cur": current_team, "turn": turn, "first": first_team,
 		"delivered": delivered, "total": chests_total, "won": won, "winner": winner,
 		"started": started, "dug": dug_cells, "dropped": _drops(), "captures": captures, "duel": public_duel,
-		"status": status[team], "revealed": _pack(revealed[team]),
+		"status": status[team], "revealed": _pack(revealed[team]), "flags": flags_seen_by(team),
 		"seen": seen[team].keys(), "duel_seq": duel_seq, "duel_text": duel_text, "duel_teams": duel_teams,
 		"offer": offer, "paused": paused, "ctrl": ctrl, "sides": sides, "clock": turn_clock, "captains": refresh_captains(),
 		"tally": tally if won else [], "reason": win_reason,
@@ -1992,6 +2077,11 @@ func apply_state(s: Dictionary) -> void:
 	var old_holes := dug_cells.size()
 	var drops_moved := _set_drops(s.get("dropped", []))
 	dug_cells.assign(s.get("dug", []))
+	# Only the flags our side sees are sent: [marker, the crew that found it].
+	var flags: Variant = s.get("flags", [])
+	if flags is Array:
+		_shown_flags = flags.filter(func(f: Variant) -> bool:
+			return f is Array and f.size() == 2 and f[0] is Vector2i and int(f[1]) >= 0 and int(f[1]) < team_count)
 	captures = s.get("captures", [])
 	var old_duel := duel
 	duel = s.get("duel", {})

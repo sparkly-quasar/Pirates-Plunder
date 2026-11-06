@@ -1262,6 +1262,46 @@ func _test_campaign() -> void:
 	_check(game.settle_resumed() and game.won and game.winner == N, "chests: a resumed game already won ends at once")
 	_free_game(game)
 
+	# A flag on the X once your crew digs up its chest, for your side only.
+	g = TerrainGrid.new(4242)
+	game = _computer_game(g)
+	# The X furthest from the pirates, with their Scout back aboard, out of sight of it.
+	var spot: Vector2i = game.buried.keys()[0]
+	for sp in game.buried:
+		if Vector2(game.buried[sp] - g.pirate_ship).length() > Vector2(game.buried[spot] - g.pirate_ship).length():
+			spot = sp
+	var marker: Vector2i = game.buried[spot]
+	_place(game._members(P)[0], g.pirate_ship)
+	_check(not g.visible_from(g.pirate_ship, game._members(P)[0].vision_points()).has(marker), "flags: (the pirates' Scout can't see that X from their ship)")
+	var digger: Character = game._members(N)[1]
+	_place(digger, spot)
+	digger.begin_dig(spot)
+	game._end_dig(digger)
+	_check(digger.carrying and game.flags_seen_by(N) == [[marker, N]], "flags: the NAVS dig up a chest and see their flag on its X")
+	_check(game.flags_seen_by(P).is_empty() and game.snapshot(P).flags.is_empty(), "flags: the pirates don't see it, and aren't sent it")
+	_check(game.snapshot(N).flags == [[marker, N]], "flags: the NAVS' own view carries it")
+	# Only a Scout notices another crew's flag, and then the whole side knows it.
+	var near := marker + Vector2i(0, 1) if g.is_walkable(marker + Vector2i(0, 1)) else marker + Vector2i(1, 0)
+	var swordsman: Character = game._members(P)[4]
+	_place(swordsman, near)
+	game._refresh_vision()
+	_check(game.flags_seen_by(P).is_empty(), "flags: a pirate Swordsman right beside the X doesn't notice the NAVS' flag")
+	_place(swordsman, g.pirate_ship)
+	var lookout: Character = game._members(P)[0]
+	_check(lookout.stats.kind == CharacterStats.Kind.SCOUT, "flags: (the pirates' first sailor is their Scout)")
+	_place(lookout, near)
+	game._refresh_vision()
+	_place(lookout, g.pirate_ship)
+	game._refresh_vision()
+	_check(game.flags_seen_by(P) == [[marker, N]] and game.snapshot(P).flags == [[marker, N]],
+		"flags: once the pirates' Scout has seen it, the pirates know the NAVS' flag (and keep it after the Scout leaves)")
+	var with_flag := game.save_state()
+	game.found_x = [{}, {}]
+	game.spotted_flags = [{}, {}]
+	game.load_state(with_flag)
+	_check(game.flags_seen_by(N) == [[marker, N]] and game.flags_seen_by(P) == [[marker, N]], "flags: both kept in a saved game")
+	_free_game(game)
+
 	# Smugglers' Cove ("sweep"): every chest aboard and every pirate captured.
 	g = TerrainGrid.new(4242)
 	game = _computer_game(g)

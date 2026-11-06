@@ -24,6 +24,10 @@ func _draw() -> void:
 	# 2. Markers on top.
 	for m in server.x_markers:
 		_draw_x(m, m == server.chart_marker)
+	# A flag on each X whose chest your side has dug up: your crew's own, or
+	# the Golden Rooster if you're a Captain. Other crews' finds stay hidden.
+	for f in server.flags_seen_by(server.viewer_team()):
+		_draw_found_flag(f[0], f[1])
 	for t in server.ships.size():
 		_draw_ship(server.ships[t], t)
 	if server.outpost.x >= 0:
@@ -62,6 +66,24 @@ func _draw_x(cell: Vector2i, gold := false) -> void:
 		draw_line(o + Vector2(TILE - 6, 6), o + Vector2(6, TILE - 6), Color(0, 0, 0, 0.6), 5.0)
 	draw_line(o + Vector2(6, 6), o + Vector2(TILE - 6, TILE - 6), col, 3.0)
 	draw_line(o + Vector2(TILE - 6, 6), o + Vector2(6, TILE - 6), col, 3.0)
+
+## A little flag planted in the middle of an X whose chest `team` found: its
+## pole stands where the two strokes cross, in the crew's flag colour (NAVS
+## blue, Pirates red, Corsairs gold, Buccaneers green), or the Golden Rooster
+## for a Captain.
+func _draw_found_flag(cell: Vector2i, team: int) -> void:
+	var o := Vector2(cell.x * TILE, cell.y * TILE)
+	var foot := o + Vector2(TILE / 2.0, TILE / 2.0)
+	var top := foot - Vector2(0, 17)
+	draw_line(foot + Vector2(1, 1), top + Vector2(1, 1), Color(0, 0, 0, 0.45), 2.0) # shadow
+	draw_line(foot, top, Color(0.30, 0.20, 0.10), 2.0)
+	draw_circle(foot, 1.6, Color(0.30, 0.20, 0.10))
+	var cloth := Rect2(top + Vector2(1, 0), Vector2(12, 8))
+	if server.captains.has(team):
+		CaptainFlag.draw(self, cloth)
+	else:
+		draw_rect(cloth, Character.flag_colour(team))
+		draw_rect(cloth, Color(0, 0, 0, 0.55), false, 1.0)
 
 ## The nav ship flies blue; the pirate ship a red pennant and a black flag;
 ## the corsairs gold and the buccaneers green, each over a pennant of their hat.
