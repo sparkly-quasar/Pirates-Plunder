@@ -30,7 +30,9 @@ env:
 
 jobs:
   release:
-    runs-on: macos-14
+    # The current macOS machine: GitHub retires the numbered ones (macos-14
+    # stopped being offered in November 2026, and every run was cancelled).
+    runs-on: macos-latest
     timeout-minutes: 45
     steps:
       - name: Which tag
