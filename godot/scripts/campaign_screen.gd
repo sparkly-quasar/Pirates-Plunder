@@ -224,6 +224,7 @@ func select(i: int) -> void:
 	rules.text = "\n".join(Campaign.rules(i))
 	tip_label.text = ("Tip: " + Campaign.tip(i)) if Campaign.tip(i) != "" else ""
 	preview.show_island(TerrainGrid.new(int(c.seed), int(c.length) as TerrainGrid.Length, int(c.rivals) + 1, float(c.get("stretch", 1.0))))
+	GameConfig.crew_first = Campaign.party() # those sailing the campaign land first
 	counts = GameConfig.campaign_counts(Campaign.party_size(i), last_counts)
 	vega_note.text = ("Vega (Navigator) sails with you too." if Campaign.vega_sails(i)
 		else "Vega is held prisoner on this island." if i == Campaign.RESCUE else "")

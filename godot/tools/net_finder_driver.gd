@@ -2,7 +2,7 @@ extends Node
 # Drives the Play on a Server list against the real server (tools/
 # finder_test.sh starts two: one as usual, one whose UDP status port is held
 # by a socket that never answers, as Docker Desktop's broken forwarding left
-# isaac's). Not shipped.
+# the home server's). Not shipped.
 #
 #   finder-udp   the usual server: found over UDP, and never asked over TCP.
 #   finder-tcp   the server silent over UDP: found anyway, over TCP; its row

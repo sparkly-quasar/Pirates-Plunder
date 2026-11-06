@@ -2794,26 +2794,48 @@ func _test_no_dither() -> void:
 ## from who's really in it (a recruit was being left out).
 func _test_recruits_land() -> void:
 	var crew_before := GameConfig.crew.duplicate(true)
+	var path_before: String = Campaign.path
+	var level_before: int = Campaign.level
+	Campaign.path = "user://smoke_campaign_party.cfg"
+	Campaign.reset(true)
 	GameConfig.crew = []
-	for k in [2, 1, 0, 3, 4, 2, 1, 0, 3]: # nine, the last a second Swordsman
+	for k in [2, 1, 0, 3, 4, 2, 1, 0, 3, 2, 1, 0, 3, 4, 2, 1]: # sixteen: a crew from a finished campaign
 		GameConfig.crew.append(CharacterStats.make(k, "R%d" % GameConfig.crew.size()).to_dict())
 	GameConfig.crew.append(Campaign.make_vega().to_dict())
-	var island := 5 # lands 8
-	_check(Campaign.party_size(island) == 9, "recruits: a crew of nine lands nine on an island of eight (Vega not counted)")
-	var last8 := GameConfig.balanced_counts(8)
-	var counts := GameConfig.campaign_counts(Campaign.party_size(island), last8)
-	_check(counts == GameConfig.counts_of(GameConfig.crew), "recruits: the briefing starts from the crew as it is")
-	var roster := GameConfig.preview_roster(counts, 0, GameConfig.Mode.COMPUTER)
-	_check(roster.size() == 9 and GameConfig.names_of(roster, CharacterStats.Kind.SWORDSMAN) == "R3, R8",
-		"recruits: both Swordsmen are in the landing party: %s" % GameConfig.names_of(roster, CharacterStats.Kind.SWORDSMAN))
+	_check(Campaign.party_size(0) == 6 and Campaign.party_size(5) == 8 and Campaign.party_size(Campaign.FINAL) == 15,
+		"campaign party: each island lands its own number, however big the crew (6, 8, 15)")
+	GameConfig.crew_first = Campaign.party()
+	var first := GameConfig.campaign_counts(Campaign.party_size(0), {})
+	var roster := GameConfig.preview_roster(first, 0, GameConfig.Mode.COMPUTER)
+	_check(roster.size() == 6, "campaign party: starting over with a crew of sixteen lands six on the first island")
+	# They sailed it: the next islands land them first.
+	Campaign.set_party(roster.map(func(r: Array) -> String: return str(r[1])))
+	_check(Campaign.party().size() == 6 and Campaign.ashore().size() == 10, "campaign party: six sailing it, ten waiting ashore (Vega not counted)")
+	_check(Campaign.places_after(0) == 0 and Campaign.places_after(1) == 1, "campaign party: island 2 has no new place, island 3 has one")
+	var waiting: Dictionary = Campaign.ashore()[3]
+	Campaign.add_to_party(str(waiting.name))
+	GameConfig.crew_first = Campaign.party()
+	var third := GameConfig.campaign_counts(Campaign.party_size(2), first)
+	roster = GameConfig.preview_roster(third, 0, GameConfig.Mode.COMPUTER)
+	var landing := roster.map(func(r: Array) -> String: return str(r[1]))
+	_check(roster.size() == 7 and landing.has(str(waiting.name)) and Campaign.party().all(func(n: String) -> bool: return landing.has(n)),
+		"campaign party: someone brought back from your crew lands with the six: %s" % ", ".join(landing))
+	Campaign.reset()
+	_check(Campaign.party().is_empty() and Campaign.ashore().size() == 16, "campaign party: starting the islands over clears who's sailing")
+	# A small crew is topped up with new sailors to the island's number.
 	GameConfig.crew = GameConfig.crew.slice(0, 3)
+	GameConfig.crew_first = []
 	var small := GameConfig.campaign_counts(Campaign.party_size(0), {})
 	var n := 0
 	for k in small:
 		n += int(small[k])
-	_check(Campaign.party_size(0) == 6 and n == 6 and int(small[CharacterStats.Kind.SCOUT]) >= 1 and int(small[CharacterStats.Kind.RUNNER]) >= 1,
-		"recruits: a small crew is topped up to the island's number, everyone in it included")
+	_check(n == 6 and int(small[CharacterStats.Kind.SCOUT]) >= 1 and int(small[CharacterStats.Kind.RUNNER]) >= 1,
+		"campaign party: a small crew is topped up to the island's number, everyone in it included")
 	GameConfig.crew = crew_before
+	GameConfig.crew_first = []
+	Campaign.reset(true)
+	Campaign.path = path_before
+	Campaign.level = level_before
 
 ## Gallows Rock: Vega behind a stockade with one gate, four guards beside
 ## her, an ambush on the way, an outpost of your own, and her post only

@@ -243,13 +243,37 @@ func _build_panels() -> void:
 func _recruit_panel() -> Control:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 8)
-	var head := _label("A NEW RECRUIT", 22)
+	var campaign := GameConfig.in_campaign()
+	var head := _label("A PLACE ON THE NEXT ISLAND" if campaign else "A NEW RECRUIT", 22)
 	head.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
 	box.add_child(head)
 	var have := {}
 	for st in solo_people:
 		have[st.kind] = int(have.get(st.kind, 0)) + 1
-	box.add_child(_label("Someone new wants to sail with you: pick what they'll be. You had %d on the island." % solo_people.size(), 15))
+	if campaign:
+		var next := GameConfig.campaign_chapter + 1
+		var ashore := Campaign.ashore()
+		var intro := _label("The next island lands %d, so there's room for one more. Take on a new recruit%s." % [
+			Campaign.party_size(next), ", or bring back someone from your crew" if not ashore.is_empty() else ""], 15)
+		intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		box.add_child(intro)
+		if not ashore.is_empty():
+			box.add_child(_label("From your crew:", 14))
+			var crew_row := HFlowContainer.new()
+			crew_row.add_theme_constant_override("h_separation", 8)
+			crew_row.add_theme_constant_override("v_separation", 8)
+			box.add_child(crew_row)
+			for d in ashore:
+				var st := CharacterStats.make(int(d.kind), str(d.name))
+				var b := Button.new()
+				b.name = "Bring" + str(d.name)
+				b.custom_minimum_size = Vector2(170, 52)
+				b.text = "%s\nthe %s" % [st.person_name, st.class_name_]
+				b.pressed.connect(func() -> void: _bring_back(st.person_name, st.class_name_))
+				crew_row.add_child(b)
+		box.add_child(_label("Or someone new: pick what they'll be.", 14))
+	else:
+		box.add_child(_label("Someone new wants to sail with you: pick what they'll be. You had %d on the island." % solo_people.size(), 15))
 	var name_row := HBoxContainer.new()
 	name_row.add_theme_constant_override("separation", 8)
 	name_row.add_child(_label("Their name:", 14))
@@ -274,7 +298,7 @@ func _recruit_panel() -> Control:
 		b.pressed.connect(func() -> void: _take_recruit(kind, name_edit.text))
 		grid.add_child(b)
 	var skip := Button.new()
-	skip.text = "No recruit this time"
+	skip.text = "Nobody new this time" if campaign else "No recruit this time"
 	skip.custom_minimum_size = Vector2(0, 36)
 	skip.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	skip.pressed.connect(func() -> void:
@@ -283,8 +307,18 @@ func _recruit_panel() -> Control:
 	box.add_child(skip)
 	return box
 
+## The campaign: someone from your crew who hasn't sailed it yet takes the
+## next island's new place.
+func _bring_back(person: String, class_title: String) -> void:
+	Campaign.add_to_party(person)
+	GameConfig.recruit_due = false
+	_show_coaching()
+	status_label.text = "%s the %s joins the crew sailing for the Star Chart." % [person, class_title]
+
 func _take_recruit(kind: int, wanted: String) -> void:
 	var st := GameConfig.recruit(kind, wanted)
+	if GameConfig.in_campaign():
+		Campaign.add_to_party(st.person_name)
 	solo_people.append(st)
 	GameConfig.last_party.append(st.person_name)
 	_build_panels()
@@ -404,7 +438,7 @@ func _refresh() -> void:
 		var done: bool = _recruit_box == null and panels.has(NAVS) and panels[NAVS].finished
 		next_button.disabled = not done
 		if _recruit_box != null:
-			status_label.text = "Pick a recruit first, then coach the crew."
+			status_label.text = ("Choose who takes the new place first, then coach the crew." if GameConfig.in_campaign() else "Pick a recruit first, then coach the crew.")
 		elif not done:
 			status_label.text = "Give everyone something to work on, then press Done."
 		return

@@ -105,6 +105,9 @@ var team_names: Array = [[], [], [], []]
 ## recruit joins first, and the names of who was on the island.
 var coaching_sessions := 0
 var recruit_due := false
+## The campaign: who from your crew lands first (Campaign.party(), by name),
+## so the same sailors keep sailing and the rest wait ashore.
+var crew_first: Array = []
 var last_party: Array = []
 ## The finished game, for the results page (see Main._results()).
 var last_results: Dictionary = {}
@@ -185,6 +188,7 @@ static func version() -> String:
 	return str(ProjectSettings.get_setting("application/config/version", "dev"))
 
 func reset() -> void:
+	crew_first = []
 	team_count = MIN_TEAMS
 	my_team = 0
 	controllers = [Ctrl.HUMAN, Ctrl.HUMAN, Ctrl.HUMAN, Ctrl.HUMAN]
@@ -381,8 +385,7 @@ func build_roster(team: Variant = 0) -> Array:
 			.map(func(d: Dictionary) -> Array: return [int(d.kind), str(d.name), d])
 	var names: Array = CREW_NAMES[side]
 	var counts: Dictionary = team_counts[side]
-	var veterans: Array = [] if side != 0 or not uses_crew() else crew.filter(
-		func(d: Dictionary) -> bool: return str(d.get("special", "")) == "")
+	var veterans: Array = [] if side != 0 or not uses_crew() else ordered_crew()
 	var taken := {}
 	var names_only := false
 	if veterans.is_empty() and in_match() and not battle_royale and side < team_names.size():
@@ -925,7 +928,22 @@ func start_campaign(i: int, counts: Dictionary) -> void:
 	team_counts[0] = counts.duplicate()
 	for t in range(1, MAX_TEAMS):
 		team_counts[t] = balanced_counts(int(c.rival_crew))
+	crew_first = Campaign.party()
 	configured = true
+
+## Your crew (Vega aside) in the order they're picked to land: in the
+## campaign, those already sailing it first (crew_first), then the rest as
+## they are in the crew.
+func ordered_crew() -> Array:
+	var regular := crew.filter(func(d: Dictionary) -> bool: return str(d.get("special", "")) == "")
+	if crew_first.is_empty():
+		return regular
+	var first := []
+	for n in crew_first:
+		for d in regular:
+			if str(d.name) == str(n):
+				first.append(d)
+	return first + regular.filter(func(d: Dictionary) -> bool: return not crew_first.has(str(d.name)))
 
 ## A campaign's island makeup: the counts you last chose, cut or grown to the
 ## island's crew size.
@@ -937,9 +955,10 @@ func campaign_counts(size: int, wanted: Dictionary = {}) -> Dictionary:
 		total += int(out[kind])
 	if total == size:
 		return out
-	# Otherwise your crew as it is (a recruit lands with the rest), cut or
-	# topped up with the classes taken in turn.
-	out = counts_of(crew)
+	# Otherwise the crew in landing order (those sailing the campaign first,
+	# a new recruit or someone brought in among them), as many as there's
+	# room for, topped up with the classes taken in turn.
+	out = counts_of(ordered_crew().slice(0, size))
 	total = 0
 	for kind in out:
 		total += int(out[kind])

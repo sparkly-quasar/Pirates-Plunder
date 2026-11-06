@@ -650,7 +650,7 @@ func _layout_hud() -> void:
 	continue_button.position = Vector2((view.x - 320) / 2.0, view.y * 0.4 + 70)
 	minimap.position = view - minimap.size - Vector2(12, 40 + bar)
 	if tutorial != null:
-		tutorial.position = Vector2(12, 64) # under the readout, on the left
+		tutorial.position = Vector2(12, 64) # under the readout, on the left (lower on a phone: _place_readout)
 	if chat != null:
 		chat.position = Vector2(12, view.y - bar - 220)
 	decision_panel.position = Vector2((view.x - 620) / 2.0, maxf(view.y * 0.3 - bar, 40.0))
@@ -664,6 +664,7 @@ func _layout_hud() -> void:
 		clock_panel.custom_minimum_size = Vector2(0, clock_h)
 		clock_panel.size = Vector2(0, clock_h) # shrink to the text
 	_place_right_column()
+	_place_readout()
 
 ## On a phone, down the right edge, each under the last: Menu, Scoreboard
 ## (three or four crews), the turn clock (a turn limit), then the scoreboard
@@ -848,6 +849,7 @@ func _update_info() -> void:
 	var c: Character = server.active
 	if c == null:
 		info_label.text = "%s   |   %s   |   island #%d" % [turn_text, chests, grid.island_seed]
+		_place_readout()
 		return
 	var stance_name: String = ["Standing", "Running", "Crawling"][c.stance]
 	# What they get back when their crew's turn comes round: stamina.
@@ -855,14 +857,39 @@ func _update_info() -> void:
 	var storm := c.team == v and _storm_island()
 	if server.rest_bonus(c) > 1.0:
 		storm = false
-	info_label.text = "%s   |   %s the %s (%s)   Energy %d (+%d a turn%s)   Combat %d   |   %s" % [
-		turn_text, c.stats.person_name, c.stats.class_name_, stance_name,
-		roundi(c.energy), roundi(rest), ", storm" if storm else (", outpost" if server.rest_bonus(c) > 1.0 else ""), roundi(c.combat_strength()), chests,
-	]
+	var sailor := "%s the %s (%s)   Energy %d (+%d a turn%s)   Combat %d" % [
+		c.stats.person_name, c.stats.class_name_, stance_name,
+		roundi(c.energy), roundi(rest), ", storm" if storm else (", outpost" if server.rest_bonus(c) > 1.0 else ""), roundi(c.combat_strength())]
+	if Touch.enabled:
+		# What it takes to win first, where a narrow screen can't cut it off.
+		info_label.text = "%s   |   %s   |   %s" % [turn_text, chests, sailor]
+	else:
+		info_label.text = "%s   |   %s   |   %s" % [turn_text, sailor, chests]
+	_place_readout()
 
 func _on_status(_text: String) -> void:
 	hud_label.text = Touch.words(server.status[server.viewer_team()])
+	_place_readout()
 	_refresh_scores()
+
+## On a phone the two lines along the top stop short of Menu and wrap onto
+## another line when they don't fit (a narrow screen, a long name), and what
+## sits under them on the left (the tutorial, the island's banner) moves down
+## to match.
+func _place_readout() -> void:
+	if not Touch.enabled or hud_label == null or info_label == null or menu_button == null:
+		return
+	var room := maxf(menu_button.position.x - 24.0, 200.0)
+	for l: Label in [hud_label, info_label]:
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.custom_minimum_size = Vector2(room, 0)
+		l.size = Vector2(room, 0) # its height follows the text
+	info_label.position.y = hud_label.position.y + hud_label.get_combined_minimum_size().y
+	var below := info_label.position.y + info_label.get_combined_minimum_size().y + 6
+	if tutorial != null:
+		tutorial.position.y = maxf(64.0, below)
+	if banner_label != null:
+		banner_label.position.y = maxf(70.0, below)
 
 ## The scoreboard for three or four crews: each crew's chests aboard and how
 ## many of them are still on the island, whose move it is, and what it takes
@@ -1042,11 +1069,20 @@ func _after_game() -> void:
 			party.append(c.stats)
 	GameConfig.remember(party)
 	GameConfig.last_party = party.map(func(st: CharacterStats) -> String: return st.person_name)
+	if GameConfig.in_campaign() and not party.is_empty():
+		# Who sails this campaign: those who landed here (not Vega, who's her own).
+		Campaign.set_party(party.filter(func(st: CharacterStats) -> bool: return st.special == "")
+			.map(func(st: CharacterStats) -> String: return st.person_name))
 	if server.mode != GameConfig.Mode.COMPUTER or not server.is_winner(Character.Team.NAVS):
 		return
 	# A win earns a round of coaching (one try for everyone) and a new recruit.
+	# In the campaign, only when the next island has room for one more: then
+	# it's a recruit or someone from your crew who hasn't sailed it yet.
 	GameConfig.coaching_sessions = 1
-	GameConfig.recruit_due = party.size() < GameConfig.MAX_TEAM_SIZE
+	if GameConfig.in_campaign():
+		GameConfig.recruit_due = Campaign.places_after(GameConfig.campaign_chapter) > 0
+	else:
+		GameConfig.recruit_due = party.size() < GameConfig.MAX_TEAM_SIZE
 
 func _on_opponent_left() -> void:
 	server.opponent_left()

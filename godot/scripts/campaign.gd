@@ -173,12 +173,42 @@ static func rules(i: int) -> Array[String]:
 		out.append("Charted: the whole island is mapped from the start.")
 	return out
 
-## How many of your crew land: the island's number, or your whole crew if
-## it has grown past that (every recruit gets a place), at most 16. Vega
-## isn't counted: she comes as well.
+## How many of your crew land: the island's number (6 on the first, 15 on
+## Treasure Island), however big your crew has grown. Vega isn't counted:
+## she comes as well.
 static func party_size(i: int) -> int:
-	var mine := GameConfig.crew.filter(func(d: Dictionary) -> bool: return str(d.get("special", "")) == "").size()
-	return clampi(maxi(int(chapter(i).crew), mine), 1, GameConfig.MAX_TEAM_SIZE)
+	return clampi(int(chapter(i).crew), 1, GameConfig.MAX_TEAM_SIZE)
+
+## Who sails this campaign (at this level), by name: whoever landed on the
+## last island played, and anyone who has joined them since (a recruit, or
+## someone from your crew brought in). They land first on the next island.
+## Your crew can be bigger than an island allows (it's the same crew as in
+## Against the Computer): the rest wait ashore until there's room.
+static func party() -> Array:
+	return (data().party[level] as Array).duplicate()
+
+static func set_party(names: Array) -> void:
+	data().party[level] = names.map(func(n: Variant) -> String: return str(n))
+	save()
+
+static func add_to_party(name: String) -> void:
+	var d := data()
+	if not (d.party[level] as Array).has(name):
+		d.party[level].append(name)
+	save()
+
+## Places the island after `i` has beyond those already sailing: room for a
+## recruit, or for someone from your crew, after winning island `i`.
+static func places_after(i: int) -> int:
+	if i >= CHAPTERS.size() - 1:
+		return 0
+	return maxi(0, party_size(i + 1) - party().size())
+
+## Your crew who aren't sailing this campaign yet (Vega aside), in crew order.
+static func ashore() -> Array:
+	var sailing := party()
+	return GameConfig.crew.filter(func(d: Dictionary) -> bool:
+		return str(d.get("special", "")) == "" and not sailing.has(str(d.name)))
 
 ## Vega sails with you on every island after the one you freed her on.
 static func vega_sails(i: int) -> bool:
@@ -189,7 +219,7 @@ static func vega_sails(i: int) -> bool:
 static func data() -> Dictionary:
 	if _loaded_from != path:
 		_loaded_from = path
-		_data = {"won": [[], [], []], "captain": false, "records": {}, "done": []}
+		_data = {"won": [[], [], []], "captain": false, "records": {}, "done": [], "party": [[], [], []]}
 		var cfg := ConfigFile.new()
 		if cfg.load(path) == OK:
 			var w: Variant = cfg.get_value("campaign", "won", [])
@@ -200,6 +230,11 @@ static func data() -> Dictionary:
 				for lv in mini(w.size(), 3):
 					if w[lv] is Array:
 						_data.won[lv] = w[lv].filter(func(v: Variant) -> bool: return (v is int or v is float) and int(v) >= 0 and int(v) < CHAPTERS.size()).map(func(v: Variant) -> int: return int(v))
+			var pt: Variant = cfg.get_value("campaign", "party", [])
+			if pt is Array:
+				for lv in mini(pt.size(), 3):
+					if pt[lv] is Array:
+						_data.party[lv] = pt[lv].map(func(v: Variant) -> String: return str(v)).filter(func(n: String) -> bool: return n != "")
 			var dn: Variant = cfg.get_value("campaign", "done", [])
 			if dn is Array:
 				_data.done = dn.filter(func(v: Variant) -> bool: return (v is int or v is float) and int(v) >= 0 and int(v) < 3).map(func(v: Variant) -> int: return int(v))
@@ -215,6 +250,7 @@ static func save() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("campaign", "won", d.won)
 	cfg.set_value("campaign", "done", d.done)
+	cfg.set_value("campaign", "party", d.party)
 	cfg.set_value("campaign", "level", level)
 	cfg.set_value("campaign", "captain", d.captain)
 	cfg.set_value("campaign", "records", d.records)
@@ -286,10 +322,11 @@ static func record(name: String) -> Dictionary:
 static func reset(all := false) -> void:
 	var d := data()
 	if all:
-		_data = {"won": [[], [], []], "captain": false, "records": {}, "done": []}
+		_data = {"won": [[], [], []], "captain": false, "records": {}, "done": [], "party": [[], [], []]}
 		level = 0
 	else:
 		d.won[level] = [] # this level starts over; the others, and a Captain, stay
+		d.party[level] = [] # and lands the first island's number again
 	_loaded_from = path
 	save()
 
