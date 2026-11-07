@@ -127,6 +127,38 @@ func save(id: String, game: Dictionary, summary: String, names: Dictionary, drop
 	_remember(id, cfg)
 	prune()
 
+## The players who were in it, by player id.
+func owners_of(id: String) -> Array:
+	return (_games[id].owners as Array).duplicate() if _games.has(id) else []
+
+## `player` deletes saved game `id` from their list. If others played it too,
+## it stays for them (the player's crew is no longer anyone's, so the
+## computer would sail it); if nobody else has it, the file goes. Returns
+## whether anyone still has it.
+func forget(id: String, player: String) -> bool:
+	if not owns(id, player):
+		return false
+	var cfg := ConfigFile.new()
+	if cfg.load(path_of(id)) != OK:
+		delete(id)
+		return false
+	var raw: Variant = cfg.get_value("save", "owners", {})
+	var left := {}
+	if raw is Dictionary:
+		for t in raw:
+			if str(raw[t]) != player:
+				left[t] = raw[t]
+	if left.is_empty():
+		delete(id)
+		return false
+	cfg.set_value("save", "owners", left)
+	var dropped: Variant = cfg.get_value("server", "dropped", [])
+	if dropped is Array:
+		cfg.set_value("server", "dropped", (dropped as Array).filter(func(p: Variant) -> bool: return str(p) != player))
+	cfg.save(path_of(id))
+	_remember(id, cfg)
+	return true
+
 func delete(id: String) -> void:
 	if _games.has(id):
 		_games.erase(id)

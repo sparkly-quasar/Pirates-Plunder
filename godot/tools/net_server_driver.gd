@@ -5,8 +5,9 @@ extends Node
 #
 #   server-navs     joins first, so sails the NAVS; plays turn 1, sits out
 #                   turn 2 until the server's turn clock passes it on, and
-#                   after the Pirates' player quits, watches the computer
-#                   take over their crew and finish a turn. Then leaves.
+#                   when the Pirates' player quits, is asked what to do,
+#                   gives their crew to the computer and watches it finish a
+#                   turn. Then leaves.
 #   server-pirates  joins second (the Pirates), plays turn 1, quits on turn 2.
 #   server-old      poses as an older version: told why and sent away.
 #   server-late     joins once the game is under way: told why and sent away.
@@ -81,7 +82,13 @@ func _navs() -> void:
 	var took := (Time.get_ticks_msec() - waited) / 1000.0
 	_check(took > 7.0 and s.status[N].contains("Out of time"),
 		"navs: sitting still, the server passed our turn on when time ran out (%.1fs): %s" % [took, s.status[N]])
-	# The Pirates' player quits on their turn 2: the computer takes over.
+	# The Pirates' player quits on their turn 2: we're asked at once what to
+	# do, and carry on with the computer sailing their crew.
+	var asked := {"n": 0}
+	Net.decision_asked.connect(func(_names: String, _can_save: bool) -> void: asked.n += 1)
+	await _until(func() -> bool: return asked.n > 0 or s.is_computer(P), 30.0)
+	_check(asked.n > 0 and str(Net.decision_info.get("gone", "")) == "left the game", "navs: the Pirates' player left the game, and we're asked what to do")
+	Net.choose("replace")
 	await _until(func() -> bool: return s.is_computer(P), 30.0)
 	_check(not s.won, "navs: the Pirates' player left, the computer took their crew, and the game goes on")
 	await _until(func() -> bool: return s.current_team == N and s.turn == 3, 120.0)

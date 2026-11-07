@@ -36,7 +36,8 @@ expect() {
 	if grep -qF "$1" "$logs/server.txt"; then echo "  [PASS] server: $2"
 	else echo "  [FAIL] server: $2 (no \"$1\" in its log)"; fail=1; fi
 }
-expect "The NAVS' player lost their connection; the game waits 6s for them to come back." "the game waits for Ann"
+expect "The NAVS' player is gone (lost their connection, or left); the game waits 6s for them to come back." "the game waits for Ann"
+expect "Ann lost the connection; asking the other players what to do." "and asks the others at once"
 expect "Ann is back. Play on!" "and carries on when she's back"
 expect "Nobody came back in time; asking the other players what to do." "it asks the others when she doesn't come back"
 expect "Ben gave Ann's crew to the computer." "Ben gives her crew to the computer"
@@ -44,7 +45,7 @@ expect "The NAVS' player is back at the helm." "Ann takes it back"
 expect "Ben chose to keep waiting for Ann." "Ben chooses to keep waiting"
 expect "Ben saved the game for later, as" "then saves it for later"
 expect "continues saved game" "Ann continues it from her list"
-expect "The NAVS' player left; the computer sails their crew." "Ann leaving on purpose isn't waited for"
+expect "Ann left the game; asking the other players what to do." "Ann leaving on purpose: the others are asked too"
 expect "for players who lost their connection to come back to" "Ben alone drops: the game is saved for him"
 expect "is back, reopening saved game" "and reopened when his copy reconnects"
 ls "$logs/saves"/*.cfg > /dev/null 2>&1 && echo "  [PASS] server: saved games are on disk" || { echo "  [FAIL] server: no saved games on disk"; fail=1; }

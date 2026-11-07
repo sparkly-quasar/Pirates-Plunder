@@ -61,6 +61,13 @@ const SIGHT_COST := {
 ## route on the island both stay under 2, the cheapest square, so they never
 ## outweigh energy.
 const PATH_LENGTH_WEIGHT := 0.01
+## Choosing a route, every step also counts this much on top of its energy, so
+## the shorter way wins when it's only a little dearer: across a couple of
+## squares of sand (or over a hill) rather than a long way round on grass.
+## A step is a step, diagonal or not (it costs the same energy).
+## Grass is still preferred when the way round is about as short. (It only
+## steers the choice: walking still costs each square's energy.)
+const ROUTE_STEP_WEIGHT := 2.0
 const PATH_LINE_WEIGHT := 0.0003
 
 const ORTHO: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
@@ -480,15 +487,19 @@ func _cells_of(tile: int) -> Array[Vector2i]:
 				out.append(Vector2i(x, y))
 	return out
 
-## Squares to land a team on, near `near`. Prefers OPEN ground and then checks
-## that nobody ends up walled in by their own team-mates — otherwise a party can
-## land in a chain along a narrow spit and be unable to move at all.
+## Squares to land a team on, near `near`. Keeps the squares right round the
+## ship clear (LANDING_CLEAR steps), so nobody stands in the way of a chest
+## coming aboard, unless there's no room further out. Prefers OPEN ground and
+## then checks that nobody ends up walled in by their own team-mates —
+## otherwise a party can land in a chain along a narrow spit and be unable to
+## move at all.
+const LANDING_CLEAR := 2
 func landing_cells(near: Vector2i, count: int) -> Array[Vector2i]:
 	var pool: Array[Vector2i] = []
 	var dist := {near: 0}
 	var queue: Array[Vector2i] = [near]
 	var head := 0
-	while head < queue.size() and pool.size() < 40:
+	while head < queue.size() and pool.size() < 70:
 		var cur: Vector2i = queue[head]
 		head += 1
 		if cur != near:
@@ -498,6 +509,10 @@ func landing_cells(near: Vector2i, count: int) -> Array[Vector2i]:
 				dist[n] = int(dist[cur]) + 1
 				queue.append(n)
 	pool.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		var ca: bool = int(dist[a]) > LANDING_CLEAR
+		var cb: bool = int(dist[b]) > LANDING_CLEAR
+		if ca != cb:
+			return ca # clear of the ship first
 		var oa: int = neighbours(a).size()
 		var ob: int = neighbours(b).size()
 		if oa != ob:
@@ -573,8 +588,9 @@ func is_meadow(c: Vector2i) -> bool:
 	return in_bounds(c) and tile_type(c) == MEADOW
 
 ## The route someone walks from -> to, as a list of cells EXCLUDING the start.
-## Cheapest in energy first — round a hill rather than over it when that saves
-## energy. Among equally cheap routes, the one that stays closest to the
+## Cheapest first, counting each square's energy plus a little for every step
+## (ROUTE_STEP_WEIGHT), so a short way over sand or a hill beats a long way
+## round on grass. Among equally cheap routes, the one that stays closest to the
 ## straight line, so people walk where you'd expect instead of zig-zagging (on
 ## a grid there are dozens of routes with the same number of steps). `blocked`
 ## holds cells that are walkable terrain but occupied (people), so routes go
@@ -601,14 +617,15 @@ func find_path(from: Vector2i, to: Vector2i, blocked: Dictionary = {}) -> Array[
 			# too small ever to outweigh a single square's energy.
 			var off := absf(line.x * (n.y - from.y) - line.y * (n.x - from.x)) / line_len
 			var step := 1.0 if (n.x == cur.x or n.y == cur.y) else 1.4142
-			var cost: float = float(best[cur]) + move_cost(n, false) + step * PATH_LENGTH_WEIGHT + off * PATH_LINE_WEIGHT
+			var cost: float = float(best[cur]) + move_cost(n, false) + ROUTE_STEP_WEIGHT + step * PATH_LENGTH_WEIGHT + off * PATH_LINE_WEIGHT
 			if best.has(n) and float(best[n]) <= cost:
 				continue
 			best[n] = cost
 			came[n] = cur
-			# Every square costs at least 2, so twice the steps left never overestimates.
+			# Every step counts at least 2 + ROUTE_STEP_WEIGHT, so that many per
+			# step left never overestimates.
 			var left: Vector2i = (to - n).abs()
-			_heap_push(heap_cost, heap_cell, cost + 2.0 * maxi(left.x, left.y), n)
+			_heap_push(heap_cost, heap_cell, cost + (2.0 + ROUTE_STEP_WEIGHT) * maxi(left.x, left.y), n)
 	if not came.has(to):
 		return result
 	var node := to
@@ -657,18 +674,32 @@ func _heap_swap(costs: Array[float], cells: Array[Vector2i], a: int, b: int) -> 
 ## The 8 walkable neighbours. Diagonals only when both adjacent orthogonals are
 ## open, so people can't slip through a corner gap.
 func neighbours(c: Vector2i) -> Array[Vector2i]:
+	# Whether each square of the 3x3 block round `c` can be walked on, read
+	# once (this runs for every square of every route the computer weighs).
+	var w := PackedByteArray()
+	w.resize(9)
+	for dy in 3:
+		var y := c.y + dy - 1
+		if y < 0 or y >= height:
+			continue
+		var row: Array = cells[y]
+		for dx in 3:
+			var x := c.x + dx - 1
+			if x < 0 or x >= width:
+				continue
+			var t: int = row[x]
+			w[dy * 3 + dx] = 1 if t != WATER and t != TREES and t != BUSH and t != FENCE else 0
 	var out: Array[Vector2i] = []
-	for dy in [-1, 0, 1]:
-		for dx in [-1, 0, 1]:
-			if dx == 0 and dy == 0:
-				continue
-			var n := c + Vector2i(dx, dy)
-			if not is_walkable(n):
-				continue
-			if dx != 0 and dy != 0:
-				if not is_walkable(Vector2i(c.x + dx, c.y)) or not is_walkable(Vector2i(c.x, c.y + dy)):
-					continue
-			out.append(n)
+	# Row by row, as before, so routes come out the same. A diagonal step
+	# needs both squares beside it open (no cutting a corner).
+	for i in [0, 1, 2, 3, 5, 6, 7, 8]:
+		if w[i] == 0:
+			continue
+		var dx: int = i % 3 - 1
+		var dy: int = int(i / 3) - 1
+		if dx != 0 and dy != 0 and (w[4 + dx] == 0 or w[(1 + dy) * 3 + 1] == 0):
+			continue
+		out.append(Vector2i(c.x + dx, c.y + dy))
 	return out
 
 ## Which cells someone at `from` can see, given a budget of vision points.
@@ -733,21 +764,29 @@ func sight_costs(from: Vector2i, budget: float) -> Dictionary:
 ## The cheapest energy, running, from `from` to every square it can reach —
 ## for the computer player, choosing where to go. `blocked` squares are walked
 ## around; `factor` scales every step (2.0 when carrying a chest).
+## Cheapest first (Dijkstra, with a heap), so each square is settled once: the
+## old first-come queue went back over the same squares again and again, and
+## with a big island and a dozen computer sailors that made the game stutter.
 func move_costs(from: Vector2i, blocked: Dictionary = {}, factor := 1.0) -> Dictionary:
 	var best := {from: 0.0}
-	var queue: Array[Vector2i] = [from]
-	var head := 0
-	while head < queue.size():
-		var cur: Vector2i = queue[head]
-		head += 1
+	var done := {}
+	var heap_cost: Array[float] = []
+	var heap_cell: Array[Vector2i] = []
+	_heap_push(heap_cost, heap_cell, 0.0, from)
+	while not heap_cell.is_empty():
+		var at := heap_cost[0]
+		var cur := _heap_pop(heap_cost, heap_cell)
+		if done.has(cur) or at > float(best[cur]):
+			continue # an older, dearer way here
+		done[cur] = true
 		for n in neighbours(cur):
-			if blocked.has(n):
+			if blocked.has(n) or done.has(n):
 				continue
-			var cost: float = float(best[cur]) + move_cost(n, false) * factor
+			var cost: float = at + move_cost(n, false) * factor
 			if best.has(n) and float(best[n]) <= cost:
 				continue
 			best[n] = cost
-			queue.append(n)
+			_heap_push(heap_cost, heap_cell, cost, n)
 	return best
 
 ## Sight ignores whether terrain is walkable — you can see across water.

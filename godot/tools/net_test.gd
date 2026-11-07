@@ -84,6 +84,8 @@ func _ready() -> void:
 		script = "res://tools/net_web_driver.gd"
 	elif role.begins_with("rejoin"):
 		script = "res://tools/net_rejoin_driver.gd"
+	elif role.begins_with("end-"):
+		script = "res://tools/net_end_driver.gd"
 	elif role.begins_with("check"):
 		script = "res://tools/net_check_update_driver.gd"
 	elif role.begins_with("royale"):

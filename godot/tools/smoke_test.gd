@@ -140,7 +140,21 @@ func _ready() -> void:
 	var seen_before: int = server.revealed[Character.Team.NAVS].size()
 	server.request_select(Character.Team.NAVS, scout.cell)
 	scout.energy = CharacterStats.MAX_ENERGY
+	# Towards the nearest square still in fog, so there's something to uncover.
 	var far := _open_cell_near(scout.cell, 6)
+	var look := {scout.cell: true}
+	var frontier: Array[Vector2i] = [scout.cell]
+	var fi := 0
+	while fi < frontier.size():
+		var cur: Vector2i = frontier[fi]
+		fi += 1
+		if not server.revealed[Character.Team.NAVS].has(cur) and server._occupant(cur) == null:
+			far = cur
+			break
+		for nb in grid.neighbours(cur):
+			if not look.has(nb):
+				look[nb] = true
+				frontier.append(nb)
 	if far != scout.cell:
 		_check(await _walk_to(far), "walked into unexplored ground")
 		_check(server.revealed[Character.Team.NAVS].size() > seen_before,
@@ -208,6 +222,8 @@ func _ready() -> void:
 	_test_many_crew_config()
 	_test_many_crew_computer()
 	_test_dedicated_server()
+	_test_forget_server_save()
+	_test_chests_diggable()
 	_test_server_list()
 	_test_two_v_two()
 	_test_equal_crews()
@@ -682,6 +698,16 @@ func _test_paths() -> void:
 	path = g.find_path(Vector2i(5, 5), Vector2i(15, 5))
 	_check(path.size() == 10 and not path.has(Vector2i(10, 5)),
 		"they step round a hill when that's no longer and costs less energy")
+	# Sand three squares wide in the way, and a way round two steps longer:
+	# straight across the sand, not the long way round.
+	for y in g.height:
+		for x in g.width:
+			g.cells[y][x] = TerrainGrid.MEADOW
+	for y in range(4, g.height):
+		for x in [10, 11, 12]:
+			g.cells[y][x] = TerrainGrid.SAND
+	path = g.find_path(Vector2i(8, 6), Vector2i(14, 6))
+	_check(path.size() == 6 and path.any(func(c: Vector2i) -> bool: return g.tile_type(c) == TerrainGrid.SAND), "sailors cross a strip of sand rather than walk a long way round it (%d steps)" % path.size())
 	g.cells[3][10] = TerrainGrid.TREES
 	g.cells[7][10] = TerrainGrid.TREES
 	_check(not g.find_path(Vector2i(5, 5), Vector2i(15, 5)).is_empty(), "and still find a way when it isn't")
@@ -1262,12 +1288,21 @@ func _test_campaign() -> void:
 	_check(game.settle_resumed() and game.won and game.winner == N, "chests: a resumed game already won ends at once")
 	_free_game(game)
 
+	# Nobody lands right by the ship, where they'd be in a carrier's way.
+	g = TerrainGrid.new(4242)
+	game = _computer_game(g)
+	var crowding := game._members(N).filter(func(c: Character) -> bool:
+		var gap: Vector2i = (c.cell - g.nav_ship).abs()
+		return maxi(gap.x, gap.y) <= TerrainGrid.LANDING_CLEAR)
+	_check(crowding.is_empty(), "landing: the two rings of squares round the ship are left clear (%d too close)" % crowding.size())
+	_free_game(game)
+
 	# A bigger energy tank with stamina: Vega goes further in a turn.
 	var vega_st := Campaign.make_vega()
 	_check(is_equal_approx(vega_st.max_energy(), 130.0) and is_equal_approx(CharacterStats.make(CharacterStats.Kind.FIGHTER).max_energy(), 100.0)
 		and is_equal_approx(CharacterStats.make(CharacterStats.Kind.SWORDSMAN).max_energy(), 100.0),
 		"energy: Vega (stamina 80) holds 130, an average sailor 100, and poor stamina never less than 100")
-	_check(is_equal_approx(vega_st.combat_strength(130.0), vega_st.combat_strength(100.0)), "energy: past 100 it doesn't add to a fight")
+	_check(vega_st.combat_strength(130.0) > vega_st.combat_strength(100.0) * 1.29, "energy: past 100 it still helps in a fight (Vega at 130 fights 30% harder)")
 	g = TerrainGrid.new(4242)
 	game = _computer_game(g)
 	var runner_c: Character = game._members(N)[2]
@@ -1312,11 +1347,37 @@ func _test_campaign() -> void:
 	game._refresh_vision()
 	_check(game.flags_seen_by(P) == [[marker, N]] and game.snapshot(P).flags == [[marker, N]],
 		"flags: once the pirates' Scout has seen it, the pirates know the NAVS' flag (and keep it after the Scout leaves)")
+	# Digging beside an X another crew has emptied: you're told, and see their flag.
+	var e_spot: Vector2i = Vector2i(-1, -1)
+	for sp in game.buried:
+		if game.buried[sp] != marker:
+			e_spot = sp
+	var e_x: Vector2i = game.buried[e_spot]
+	var e_taker: Character = game._members(P)[1]
+	_place(e_taker, e_spot)
+	e_taker.begin_dig(e_spot)
+	game._end_dig(e_taker)
+	var e_beside := Vector2i(-1, -1)
+	for nb in g.neighbours(e_x):
+		if g.is_meadow(nb) and nb != e_spot and game._occupant(nb) == null:
+			var e_near_other := false
+			for e_m in game.x_markers:
+				if e_m != e_x and maxi(absi(e_m.x - nb.x), absi(e_m.y - nb.y)) <= 1:
+					e_near_other = true
+			if not e_near_other:
+				e_beside = nb
+				break
+	var e_digger: Character = game._members(N)[3]
+	_place(e_digger, e_beside)
+	e_digger.begin_dig(e_beside)
+	game._end_dig(e_digger)
+	_check(str(game.status[N]).contains("dug its chest up already") and game.flags_seen_by(N).has([e_x, P]),
+		"flags: digging by an X the pirates emptied says so, and shows their flag: %s" % game.status[N])
 	var with_flag := game.save_state()
 	game.found_x = [{}, {}]
 	game.spotted_flags = [{}, {}]
 	game.load_state(with_flag)
-	_check(game.flags_seen_by(N) == [[marker, N]] and game.flags_seen_by(P) == [[marker, N]], "flags: both kept in a saved game")
+	_check(game.flags_seen_by(N).has([marker, N]) and game.flags_seen_by(N).has([e_x, P]) and game.flags_seen_by(P).has([marker, N]), "flags: both kinds kept in a saved game")
 	_free_game(game)
 
 	# Smugglers' Cove ("sweep"): every chest aboard and every pirate captured.
@@ -1952,6 +2013,60 @@ func _test_equal_crews() -> void:
 
 ## A dedicated server's rules: no crew of its own, every crew (the NAVS too) a
 ## player online or the computer, and computer crews of the server's size.
+## Every chest can be dug: on open meadow beside its X (never in a thicket,
+## woods or water), reachable from the ships, one for every X, on islands of
+## every size and crew count.
+func _test_chests_diggable() -> void:
+	var bad := 0
+	var count := 0
+	for teams in [2, 3, 4]:
+		for length in [0, 1, 2]:
+			for sd in range(1, 6):
+				var g := TerrainGrid.new(sd * 104729 + teams * 17 + length, length as TerrainGrid.Length, teams)
+				var s := GameServer.new()
+				s.grid = g
+				s.x_markers = g.markers.duplicate()
+				var rng := RandomNumberGenerator.new()
+				rng.seed = g.island_seed
+				for m in s.x_markers:
+					s.buried[s._buried_spot(m, rng)] = m
+				var reach := g.move_costs(g.ships[0])
+				for spot in s.buried:
+					count += 1
+					var gap: Vector2i = (spot - s.buried[spot]).abs()
+					if not g.is_meadow(spot) or not g.is_walkable(spot) or maxi(gap.x, gap.y) != 1 or not reach.has(spot):
+						bad += 1
+				if s.buried.size() != s.x_markers.size():
+					bad += 1
+				s.free()
+	_check(bad == 0, "chests: all %d on open meadow beside their X, reachable, one per X (%d not)" % [count, bad])
+
+## A player deletes a saved game from a server's list: it goes from theirs,
+## stays for a friend who played it, and goes for good with the last of them.
+func _test_forget_server_save() -> void:
+	var Saves: Script = load("res://scripts/server_saves.gd")
+	var folder := "user://smoke_forget_saves"
+	DirAccess.make_dir_recursive_absolute(folder)
+	for f in DirAccess.get_files_at(folder):
+		DirAccess.remove_absolute(folder.path_join(f))
+	var saves: RefCounted = Saves.new()
+	saves.open(folder, 30.0)
+	var owners_before: Dictionary = GameConfig.seat_owners.duplicate()
+	GameConfig.seat_owners = {0: "ann-id", 1: "ben-id"}
+	var id: String = Saves.new_id()
+	saves.save(id, {}, "Turn 2 of game 1", {0: "Ann", 1: "Ben"}, ["ben-id"])
+	GameConfig.seat_owners = owners_before
+	_check(saves.owns(id, "ann-id") and saves.owns(id, "ben-id"), "server saves: a game belongs to both its players")
+	_check(not saves.forget(id, "cat-id") and saves.has(id), "server saves: someone who wasn't in it can't delete it")
+	_check(saves.forget(id, "ann-id") and not saves.owns(id, "ann-id") and saves.owns(id, "ben-id")
+		and saves.mine(ServerFinder.back_key("ann-id")).is_empty() and saves.mine(ServerFinder.back_key("ben-id")).size() == 1,
+		"server saves: Ann deletes it from her list; Ben still has it")
+	var again: RefCounted = Saves.new()
+	again.open(folder, 30.0)
+	_check(again.owns(id, "ben-id") and not again.owns(id, "ann-id") and again.dropped_in(id) == ["ben-id"], "server saves: and it stays that way after a restart")
+	_check(not again.forget(id, "ben-id") and not again.has(id) and not FileAccess.file_exists(again.path_of(id)),
+		"server saves: when the last of its players deletes it, it's gone for good")
+
 func _test_dedicated_server() -> void:
 	var saved_mode := GameConfig.mode
 	var F := GameConfig.Ctrl.FRIEND

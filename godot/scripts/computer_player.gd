@@ -28,6 +28,8 @@ extends Node
 ## and the look-out only moves up while fresh enough to fight on arrival.
 
 const THINK_TIME := 0.35      ## pause between orders, so the turn reads as deliberate
+## Most time planning may take in one frame before the rest wait for the next.
+const PLAN_BUDGET_USEC := 12000
 const DUEL_THINK_TIME := 0.9  ## pause before answering a sword fight
 const MAX_ORDERS := 10        ## per person per turn; a safety net against dithering
 const SEEN_PACE := 1.5        ## our turn's walking speed-up for those of us in sight...
@@ -124,7 +126,14 @@ func _process(delta: float) -> void:
 		return # give them a moment to step off before anyone else plans a route
 	var watcher := _watcher(people)
 	var busy := false
+	# Planning is spread over frames: a crew of a dozen on a big island used
+	# to plan everyone at once, and the game froze for a moment each time.
+	var started := Time.get_ticks_usec()
 	for c in people:
+		if Time.get_ticks_usec() - started > PLAN_BUDGET_USEC:
+			busy = true
+			_wait = 0.0 # carry on with the rest next frame
+			break
 		if c.digging or not c.path.is_empty():
 			busy = true
 		elif not _done.has(c.id):

@@ -73,8 +73,9 @@ func _draw_x(cell: Vector2i, gold := false) -> void:
 ## for a Captain.
 func _draw_found_flag(cell: Vector2i, team: int) -> void:
 	var o := Vector2(cell.x * TILE, cell.y * TILE)
-	var foot := o + Vector2(TILE / 2.0, TILE / 2.0)
-	var top := foot - Vector2(0, 17)
+	# All of it inside the X's own square, so it can't be taken for the next one.
+	var foot := o + Vector2(TILE / 2.0, TILE / 2.0 + 2)
+	var top := o + Vector2(TILE / 2.0, 3)
 	draw_line(foot + Vector2(1, 1), top + Vector2(1, 1), Color(0, 0, 0, 0.45), 2.0) # shadow
 	draw_line(foot, top, Color(0.30, 0.20, 0.10), 2.0)
 	draw_circle(foot, 1.6, Color(0.30, 0.20, 0.10))

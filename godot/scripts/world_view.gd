@@ -3,6 +3,13 @@ extends Node2D
 
 ## Draws the island. Static — the terrain doesn't change, so this paints once.
 ##
+## Shown on screen, the island is a TileMapLayer built from a small sheet of
+## squares this draws once when the island loads (a few of each kind, at twice
+## the size so they stay sharp zoomed in): Godot then draws a whole patch of
+## the island at a time. Drawn square by square, a big island took thousands
+## of draw calls every frame, which made phones crawl. With nothing on screen
+## (a server, the tests) it's drawn the old way.
+##
 ## Every tile gets a base colour plus hand-placed detail (grass tufts, tree
 ## canopies, bush clumps, wave lines, rock facets), because in the original you
 ## can read the terrain at a glance from its shapes, not just its colour.
@@ -25,6 +32,15 @@ var _paintings := {} # kind -> [Texture2D]
 
 var grid: TerrainGrid
 
+## How many versions of each hand-drawn kind of square go on the sheet.
+const DRAWN_VARIANTS := 6
+const SHEET_SCALE := 2 # the sheet's squares are drawn this many times bigger
+const KINDS := [TerrainGrid.WATER, TerrainGrid.MEADOW, TerrainGrid.SAND, TerrainGrid.BUSH,
+	TerrainGrid.TREES, TerrainGrid.SWAMP, TerrainGrid.HILL, TerrainGrid.FENCE]
+var tiles: TileMapLayer = null ## the island on screen, once the sheet is made
+var _sheet_slots: Array = [] ## a sheet painter: [kind, variant] for each square
+var _sheet_painter := false
+
 func _ready() -> void:
 	# The paintings are bigger than a square, so shrink them smoothly.
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
@@ -35,8 +51,15 @@ func _ready() -> void:
 			if ResourceLoader.exists(path):
 				list.append(load(path))
 		_paintings[kind] = list
+	if not _sheet_painter and grid != null and DisplayServer.get_name() != "headless":
+		_make_tiles.call_deferred()
 
 func _draw() -> void:
+	if _sheet_painter:
+		_draw_sheet()
+		return
+	if tiles != null:
+		return # the TileMapLayer shows the island
 	for y in grid.height:
 		for x in grid.width:
 			_draw_tile(Vector2i(x, y))
@@ -48,9 +71,98 @@ func _draw() -> void:
 	for y in grid.height + 1:
 		draw_line(Vector2(0, y * TILE), Vector2(grid.width * TILE, y * TILE), line, 1.0)
 
+# --- the sheet of squares, and the island laid out from it --------------------
+
+## How many versions of `kind` there are on the sheet.
+func _variants(kind: int) -> int:
+	var paintings: Array = _paintings.get(kind, [])
+	return paintings.size() if not paintings.is_empty() else (1 if kind == TerrainGrid.FENCE else DRAWN_VARIANTS)
+
+## Which version a square of the island uses: the same pick as when it was
+## drawn square by square, so the island looks the same either way.
+func _variant_at(c: Vector2i, kind: int) -> int:
+	var n := _variants(kind)
+	if not (_paintings.get(kind, []) as Array).is_empty():
+		return int(_r(c, 7) * n) % n
+	return int(_r(c, 3) * n) % n
+
+## The pretend square a sheet version is drawn as (its detail comes from it).
+static func _sample_cell(kind: int, variant: int) -> Vector2i:
+	return Vector2i(1000 + variant * 7, 2000 + kind * 13)
+
+## Draws the sheet, once: a few versions of every kind of square, side by
+## side, at SHEET_SCALE, into a picture; then lays the island out from it.
+func _make_tiles() -> void:
+	var slots: Array = []
+	for kind in KINDS:
+		for v in _variants(kind):
+			slots.append([kind, v])
+	var cols := 8
+	var rows := ceili(slots.size() / float(cols))
+	var side := TILE * SHEET_SCALE
+	var vp := SubViewport.new()
+	vp.size = Vector2i(cols * side, rows * side)
+	vp.transparent_bg = true
+	vp.disable_3d = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	var painter := WorldView.new()
+	painter._sheet_painter = true
+	painter._sheet_slots = slots
+	painter.grid = grid
+	painter.scale = Vector2(SHEET_SCALE, SHEET_SCALE)
+	vp.add_child(painter)
+	add_child(vp)
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
+	var img := vp.get_texture().get_image() if is_instance_valid(vp) else null
+	vp.queue_free()
+	if img == null or img.is_empty():
+		return # couldn't draw it: carry on drawing square by square
+	img.generate_mipmaps()
+	var source := TileSetAtlasSource.new()
+	source.texture = ImageTexture.create_from_image(img)
+	source.texture_region_size = Vector2i(side, side)
+	source.use_texture_padding = true # no seams when zoomed out
+	var at := {}
+	for i in slots.size():
+		var coords := Vector2i(i % cols, int(i / cols))
+		source.create_tile(coords)
+		at[Vector2i(slots[i][0], slots[i][1])] = coords
+	var tset := TileSet.new()
+	tset.tile_size = Vector2i(side, side)
+	var id := tset.add_source(source)
+	var layer := TileMapLayer.new()
+	layer.name = "Tiles"
+	layer.tile_set = tset
+	layer.scale = Vector2(1.0 / SHEET_SCALE, 1.0 / SHEET_SCALE)
+	layer.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	for y in grid.height:
+		for x in grid.width:
+			var c := Vector2i(x, y)
+			var kind := grid.tile_type(c)
+			layer.set_cell(c, id, at.get(Vector2i(kind, _variant_at(c, kind)), Vector2i.ZERO))
+	add_child(layer)
+	tiles = layer
+	queue_redraw() # stop drawing square by square
+
+## The sheet painter: each version in its slot, with the faint grid line along
+## its top and left edges (as the island had).
+func _draw_sheet() -> void:
+	for i in _sheet_slots.size():
+		var kind: int = _sheet_slots[i][0]
+		var v: int = _sheet_slots[i][1]
+		var o := Vector2((i % 8) * TILE, int(i / 8) * TILE)
+		_paint(kind, _sample_cell(kind, v), o, v)
+		var line := Color(0, 0, 0, 0.07)
+		draw_line(o, o + Vector2(TILE, 0), line, 1.0)
+		draw_line(o, o + Vector2(0, TILE), line, 1.0)
+
 func _draw_tile(c: Vector2i) -> void:
-	var o := Vector2(c.x * TILE, c.y * TILE)
-	var t := grid.tile_type(c)
+	_paint(grid.tile_type(c), c, Vector2(c.x * TILE, c.y * TILE), -1)
+
+## One square of `t` at `o`, its detail placed from `c`; `pick` chooses the
+## painting (-1: from `c`, as on the island).
+func _paint(t: int, c: Vector2i, o: Vector2, pick_: int) -> void:
 	var paintings: Array = _paintings.get(t, [])
 	if not paintings.is_empty():
 		# The ground under the painting: meadow round a hill, deep shade under
@@ -61,8 +173,8 @@ func _draw_tile(c: Vector2i) -> void:
 			TerrainGrid.HILL:
 				_fill(o, Color(0.55, 0.66, 0.24))
 				_grass(c, o)
-		var pick := int(_r(c, 7) * paintings.size()) % paintings.size()
-		draw_texture_rect(paintings[pick], Rect2(o, Vector2(TILE, TILE)), false)
+		var pick := pick_ if pick_ >= 0 else int(_r(c, 7) * paintings.size()) % paintings.size()
+		draw_texture_rect(paintings[pick % paintings.size()], Rect2(o, Vector2(TILE, TILE)), false)
 		return
 	match t:
 		TerrainGrid.WATER:

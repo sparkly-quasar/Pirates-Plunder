@@ -27,6 +27,7 @@ var _shown := ""          # what the list shows, so it's only rebuilt when that 
 var _note := ""           # what Tailscale said
 var _scanned := false
 var _busy := false        # connecting, or connected and waiting
+var _forget_armed := "" ## a saved game whose Delete has been pressed once
 var _picked := {}         # the server a new game is being set up for
 var _ask := {}            # that game's settings
 var _update_peer := 0
@@ -224,7 +225,7 @@ func _redraw() -> void:
 	var servers := finder.servers()
 	var key := JSON.stringify(servers.map(func(s: Dictionary) -> Array:
 		return [s.address, s.v, s.state, s.leader, s.taken, s.open, s.crews, s.people, s.mine, s.players, s.back, s.get("via", "")]))
-	key += str(_busy) + str(start_panel.visible)
+	key += str(_busy) + str(start_panel.visible) + _forget_armed
 	if key != _shown:
 		_shown = key
 		for c in list_box.get_children():
@@ -319,8 +320,23 @@ func _server_row(s: Dictionary) -> Control:
 			var b := _button("Continue", func() -> void: _go(s, {"continue": id}))
 			b.disabled = str(s.state) != "free"
 			game_row.add_child(b)
+			# Delete it: a second press to be sure. It goes from your list only;
+			# anyone else who played it keeps it.
+			var armed := _forget_armed == id
+			var gone := _button("Delete for good?" if armed else "Delete", func() -> void:
+				if _forget_armed == id:
+					_forget_armed = ""
+					_go(s, {"forget": id})
+				else:
+					_forget_armed = id
+					_redraw())
+			gone.name = "Delete" + id
+			if armed:
+				gone.add_theme_color_override("font_color", Color(1.0, 0.55, 0.45))
+			game_row.add_child(gone)
 			stack.add_child(game_row)
 			b.disabled = b.disabled or _busy or start_panel.visible
+			gone.disabled = _busy or start_panel.visible
 	for b in buttons.get_children():
 		if b is BaseButton:
 			b.disabled = b.disabled or _busy or start_panel.visible

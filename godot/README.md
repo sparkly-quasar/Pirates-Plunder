@@ -229,6 +229,9 @@ tools/lobby_test.sh    # a server where players start games, and three players: 
 godot --headless --path . res://tools/NetTest.tscn -- --role=lobby-scan   # what this computer finds through Tailscale (by hand)
 tools/web_test.sh      # a browser (WebSockets) and a desktop copy (ENet) on one server: status, start, join, chat, turns
 xvfb-run -a godot --path . --resolution 1280x720 -s res://tools/touch_scroll_test.gd -- --touch   # phone layout: a drag on a button scrolls the coaching list, a tap presses it
+tools/seat_test.sh     # a reopened saved game waits for its own players: a stranger is turned away, no sailing without them
+tools/end_test.sh      # a player goes; the other is asked at once and ends the game: sent away, nothing saved
+tools/forget_test.sh   # deleting a saved game from a server's list: only its players can, it stays for the others, then it's gone
 tools/caddy_test.sh    # the same, with the browser going through Caddy set up as server/Caddyfile (needs caddy)
 tools/release_update_test.sh   # Check for Updates from the public releases, against a stand-in for GitHub: download, fingerprint, the API's limit
 tools/server_update_test.sh    # the server's auto-update through run.sh, against a stand-in for GitHub: fetch, switch, restart, a bad version, no run.sh

@@ -141,6 +141,7 @@ var _board: RefCounted = preload("res://scripts/server_board.gd").new() # the Ha
 var _save_id := ""      # the saved game this match is kept as
 var _names := {}        # crew -> its player's name, for the saved game's line
 var _saved_for_later := false # its players chose to save it and stop
+var _ended := false # its players chose to end it: nothing kept
 var _leader := 0        # lobby=players: the peer who started the game, or took it over
 var _status: PacketPeerUDP = null
 var _web_status: Node = null # answers browsers' server lists (scripts/web_status.gd)
@@ -171,9 +172,13 @@ func _ready() -> void:
 	Net.updater.serve_dir = downloads
 	Net.gatekeeper = _gate
 	Net.guest_waiting.connect(func(team: int) -> void:
-		_log("The %s' player lost their connection; the game waits %ds for them to come back." % [GameConfig.team_name(team), int(rejoin_seconds)]))
-	Net.decision_asked.connect(func(_names: String, _can_save: bool) -> void:
-		_log("Nobody came back in time; asking the other players what to do."))
+		_log("The %s' player is gone (lost their connection, or left); the game waits %ds for them to come back." % [GameConfig.team_name(team), int(rejoin_seconds)]))
+	Net.decision_asked.connect(func(names: String, _can_save: bool) -> void:
+		var info: Dictionary = Net.decision_info
+		if bool(info.get("first", false)):
+			_log("%s %s; asking the other players what to do." % [names, str(info.get("gone", "lost the connection"))])
+		else:
+			_log("Nobody came back in time; asking the other players what to do."))
 	Net.decision_made.connect(func(text: String) -> void: _log(text))
 	if not allow_pause:
 		Net.blocked_intents["pause"] = true
@@ -262,6 +267,7 @@ func _ready() -> void:
 	_log("Keeps a Hall of Fame in %s (%d player%s so far)." % [ProjectSettings.globalize_path(_board.path), _board.players.size(), "" if _board.players.size() == 1 else "s"])
 	Net.wait_seconds = rejoin_seconds
 	Net.save_for_later = _save_for_later if saves != "" else Callable()
+	Net.end_game = _end_game_now
 	if lobby_mode == "players":
 		_go_free()
 	else:
@@ -410,6 +416,7 @@ func _open_lobby(game := {}, save_id := "", only := []) -> void:
 				GameConfig.controllers[t] = GameConfig.Ctrl.COMPUTER
 	_save_id = save_id if campaign else _games.new_id()
 	_saved_for_later = false
+	_ended = false
 	_names = _games.names_of(save_id) if campaign else {}
 	GameConfig.mode = GameConfig.Mode.SERVER
 	Net.reopen()
@@ -448,14 +455,28 @@ func _reset_lobby() -> void:
 	_match_games = 0
 	_leader = 0
 
+## What a player who deleted a saved game is told (the server list shows it).
+const FORGOT := "Deleted: that saved game is gone from this server."
+const FORGOT_SHARED := "Deleted from your list. The others who played it still have it."
+
 ## Net asks this before seating someone (Net.gatekeeper). With lobby=players a
 ## free server lets in only someone starting a game, who leads it; once a game
 ## is open anyone may join it, and Net seats them if there's room.
 func _gate(id: int) -> String:
-	if Net.match_started:
-		return "" # Net seats them if their crew is waiting for them, or tells them the game is under way
 	var ask: Variant = Net.updater.request_of(id)
 	var me := Net.updater.player_of(id)
+	# Deleting one of their saved games from their list (any time, even with
+	# a game going): only one they were in. They're then sent away with
+	# what happened, which their server list shows.
+	if ask is Dictionary and ask.has("forget"):
+		var fid := str(ask["forget"])
+		if saves == "" or not _games.owns(fid, me):
+			return "That saved game isn't on this server any more."
+		var kept: bool = _games.forget(fid, me)
+		_log("%s deleted saved game %s from their list%s." % [_who(id), fid, " (the others in it keep it)" if kept else ""])
+		return (FORGOT_SHARED if kept else FORGOT)
+	if Net.match_started:
+		return "" # Net seats them if their crew is waiting for them, or tells them the game is under way
 	# Continuing a saved game: one they chose from their list, or (a copy that
 	# lost its connection and is reconnecting by itself) the one that was
 	# saved when everyone had gone.
@@ -527,6 +548,8 @@ func _on_sail_requested(id: int) -> void:
 	_sailing = true
 	Net.fill_open_seats() # its seats_changed starts the match
 	_sailing = false
+	if not Net.match_started and not _waiting_for().is_empty():
+		_log("%s asked to set sail; the saved game waits for %s." % [_who(id), " and ".join(_waiting_for())])
 
 ## The player who leads after the leader left: whoever sails the earliest crew.
 func _next_leader() -> int:
@@ -546,7 +569,16 @@ func _send_lobby() -> void:
 		out.append({"team": t, "who": "computer" if GameConfig.is_computer(t) else ("player" if id != 0 else "open"),
 			"name": Net.updater.name_of(id) if id != 0 else "", "ready": Net.has_chosen(t),
 			"captain": id != 0 and Net.updater.is_captain(id)})
-	Net.send_lobby({"leader": int(Net.guests.get(_leader, -1)), "seats": out, "auto": lobby_mode == "always"})
+	Net.send_lobby({"leader": int(Net.guests.get(_leader, -1)), "seats": out, "auto": lobby_mode == "always",
+		"waiting": _waiting_for()})
+
+## A saved game reopened: the names of the players it's waiting for.
+func _waiting_for() -> Array:
+	var out := []
+	for t in Net.owners_missing():
+		var n := str(_names.get(t, _names.get(str(t), "")))
+		out.append(n if n != "" else "the %s' player" % GameConfig.team_name(t))
+	return out
 
 ## "Ana (player 3)", or "Player 3" for a copy that didn't say its name.
 func _who(id: int) -> String:
@@ -599,6 +631,12 @@ func _on_seats_changed() -> void:
 			# Those who lost their connection go straight back into it if
 			# their game reconnects; anyone can continue it from their list.
 			var dropped: Array = Net.away.values().map(func(p: Variant) -> String: return str(p))
+			if _ended:
+				# They ended it: nothing kept, not even the save made as it went.
+				if _games.has(_save_id):
+					_games.delete(_save_id)
+				_end_match("its players ended it")
+				return
 			if not _saved_for_later:
 				_save_match(dropped)
 			if _games.has(_save_id):
@@ -920,6 +958,14 @@ func _save_for_later(who: String) -> void:
 	_log("%s saved the game for later, as %s." % [who, _save_id])
 	for id in Net.guests.keys():
 		_kick(int(id), "%s saved the game for later. Continue it from Play on a Server; everyone comes back into their own crew." % who)
+
+## Someone chose to end the game: everyone is sent away, and nothing is kept
+## (see _on_seats_changed).
+func _end_game_now(who: String) -> void:
+	_ended = true
+	_log("%s ended the game." % who)
+	for id in Net.guests.keys():
+		_kick(int(id), "%s ended the game." % who)
 
 # --- helpers ---------------------------------------------------------------------
 

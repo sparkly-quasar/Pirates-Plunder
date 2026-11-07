@@ -89,9 +89,9 @@ func dig_cost() -> float:
 ##   CS = (Sword + C + Sword*C/100) * ET/100
 func combat_strength(energy: float) -> float:
 	var t := team_spirit / 5.0
-	# A bigger tank is for going further, not hitting harder: past 100, energy
-	# doesn't add to a fight.
-	var et: float = maxf(minf(energy, MAX_ENERGY), t)
+	# A bigger tank helps in a fight too: Vega fully rested (130) fights 30%
+	# harder than at 100.
+	var et: float = maxf(energy, t)
 	var c := confidence / 10.0
 	return (swordfighting + c + swordfighting * c / 100.0) * et / 100.0
 
@@ -104,7 +104,7 @@ func max_energy() -> float:
 
 ## Combat strength when fully rested — sets the height of the bar's frame.
 func max_combat_strength() -> float:
-	return combat_strength(MAX_ENERGY)
+	return combat_strength(max_energy())
 
 ## Seconds to cross one square. Faster (higher speed) = shorter. Excellent
 ## covers roughly four squares in the time Poor covers one.

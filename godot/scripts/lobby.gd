@@ -180,8 +180,12 @@ func _refresh_seats() -> void:
 	for t in range(1, GameConfig.team_count):
 		if Net.peer_for(t) != 0 and not Net.has_chosen(t):
 			choosing = true
-	start_now.disabled = choosing
-	if choosing:
+	var held := Net.owners_missing()
+	start_now.disabled = choosing or not held.is_empty()
+	if not held.is_empty():
+		# A saved game: it waits for the friends who sailed it.
+		start_now.text = "Waiting for the %s' player%s to come back" % [", ".join(held.map(func(t: int) -> String: return GameConfig.team_name(t))), "" if held.size() == 1 else "s"]
+	elif choosing:
 		start_now.text = "Start Now (once everyone here has chosen a crew)"
 	elif empty > 0:
 		start_now.text = "Start Now: the computer sails the %d empty crew%s" % [empty, "" if empty == 1 else "s"]

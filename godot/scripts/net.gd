@@ -123,8 +123,21 @@ var wait_seconds := 120.0
 ## that. A player's hosted game saves to its online slot (Continue Online
 ## Match); a dedicated server sets its own, or none if it keeps no saves.
 var save_for_later := Callable()
+## Ends the game with nothing saved (an "End the Game" answer): set by
+## whoever hosts it, a player or a dedicated server.
+var end_game := Callable()
 var _waiting := {}          # host: crew -> name of the player the game waits for
 var _wait_left := -1.0
+## Once the others are asked what to do: how long before the computer takes
+## over by itself if nobody answers.
+const DECIDE_SECONDS := 30.0
+var _decide_left := -1.0
+var _left_on_purpose := {} # team -> true: a waited-for player who left on purpose (not a dropped line)
+var _first_ask := false
+## What the last question was about, for whoever shows it: {first: asked the
+## moment they went, gone: "left the game" or "lost the connection", secs:
+## how long before the computer takes over if nobody answers}.
+var decision_info := {}
 var _asked := false         # host: the others have been asked what to do
 var _shown_secs := -1
 ## Guest: the address of the match we're in, to get back into it if the
@@ -160,8 +173,14 @@ func _ready() -> void:
 	updater.refused.connect(_on_refused)
 	multiplayer.connected_to_server.connect(func() -> void: updater.greet(1))
 	lobby_changed.connect(func() -> void:
+		# Back in a saved game: it waits for the players who sailed it (no
+		# setting sail without them), and says who.
 		if _notice_sail != null:
-			_notice_sail.visible = _back_in_lobby and i_lead())
+			_notice_sail.visible = false
+		if _back_in_lobby and _notice_label != null:
+			var missing: Array = lobby.get("waiting", [])
+			_notice_label.text = ("Back on the server, in your saved game. Waiting for %s to come back..." % " and ".join(missing)) if not missing.is_empty() \
+				else "Back on the server, in your saved game. Setting sail...")
 	multiplayer.peer_connected.connect(_on_peer_connected)
 	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	multiplayer.connection_failed.connect(func() -> void:
@@ -210,6 +229,7 @@ func host_game(port := PORT, max_clients := MAX_GUESTS, bind := "", web_port := 
 	multiplayer.multiplayer_peer = peer
 	role = Role.HOST
 	save_for_later = _host_save_for_later
+	end_game = _host_end_game
 	updater.rejoin_address = ""
 	return OK
 
@@ -362,25 +382,65 @@ func _tick_wait(delta: float) -> void:
 		_asked = false
 		return
 	var names := _waiting_names()
+	var gone := "left the game" if _waiting.keys().all(func(t: Variant) -> bool: return _left_on_purpose.has(int(t))) else "lost the connection"
 	if _asked:
+		# The others have been asked. Until someone answers, the game waits;
+		# the first time for the full wait, then (asked again) a short while,
+		# and then the computer takes their crew over by itself, so the game
+		# never sits waiting for good.
+		_decide_left -= delta
+		var left := maxi(ceili(_decide_left), 0)
+		if left != _shown_secs:
+			_shown_secs = left
+			game_server.hold(true, "%s %s. Choose what to do: the computer takes over in %d:%02d if nobody does." % [names, gone, left / 60, left % 60])
+		if _decide_left > 0.0:
+			return
+		if _first_ask:
+			_ask(names, gone, false) # one more chance to choose
+			return
+		var teams := _waiting.keys()
+		_end_wait("Nobody chose in time, so the computer sails %s's crew." % names)
+		_hand_over(teams)
 		return
+	# Someone chose to keep waiting: count down, then ask again.
 	_wait_left -= delta
 	var secs := maxi(ceili(_wait_left), 0)
 	if secs != _shown_secs:
 		_shown_secs = secs
-		game_server.hold(true, "%s lost the connection. Waiting for them to come back (%d:%02d)..." % [names, secs / 60, secs % 60])
+		game_server.hold(true, "%s %s. Waiting for them to come back (%d:%02d)..." % [names, gone, secs / 60, secs % 60])
 	if _wait_left > 0.0:
 		return
+	_ask(names, gone, false)
+
+## The computer sails these crews from now on. Someone who only lost their
+## connection can still come back into theirs; someone who left on purpose
+## isn't kept a place any more (nor waited for if the game is saved).
+func _hand_over(teams: Array) -> void:
+	for t in teams:
+		if _left_on_purpose.has(int(t)):
+			away.erase(int(t))
+			_left_on_purpose.erase(int(t))
+		GameConfig.controllers[int(t)] = GameConfig.Ctrl.COMPUTER
+		guest_left.emit(int(t)) # Main hands it over
+
+## Everyone still playing is asked what to do about who's gone: carry on
+## with the computer sailing their crew, wait for them, or end the game
+## (saved for later). `first`: asked the moment they went, with the whole
+## wait to answer in; later, a short while before the computer takes over.
+func _ask(names: String, gone: String, first: bool) -> void:
 	_asked = true
+	_first_ask = first
+	_decide_left = wait_seconds if first else DECIDE_SECONDS
+	_shown_secs = -1
 	var can_save := save_for_later.is_valid()
-	game_server.hold(true, "%s didn't come back in time. Choose what to do." % names)
+	decision_info = {"first": first, "gone": gone, "secs": int(_decide_left)}
 	for id in guests:
-		_rpc_decide.rpc_id(int(id), names, can_save)
+		_rpc_decide.rpc_id(int(id), names, can_save, decision_info)
 	decision_asked.emit(names, can_save)
 
 ## Someone on this machine chose: "replace" (the computer sails their crew;
-## they can still come back into it), "wait" (another while) or "save" (for
-## later, ending the game).
+## they can still come back into it), "wait" (another while), "end" (the
+## game ends, nothing saved) or "save" (for later, ending the game).
 func choose(choice: String) -> void:
 	if role == Role.HOST:
 		_decide(choice, GameConfig.player_name())
@@ -403,18 +463,32 @@ func _decide(choice: String, who: String) -> void:
 		"replace":
 			var teams := _waiting.keys()
 			_end_wait("%s gave %s's crew to the computer." % [who, names])
-			for t in teams:
-				GameConfig.controllers[int(t)] = GameConfig.Ctrl.COMPUTER
-				guest_left.emit(int(t)) # Main hands it over
+			_hand_over(teams)
 		"wait":
 			_asked = false
 			_wait_left = wait_seconds
 			_shown_secs = -1
 			_tell_decided("%s chose to keep waiting for %s." % [who, names])
+		"end":
+			if not end_game.is_valid():
+				return
+			var finish := end_game
+			for t in _waiting:
+				away.erase(int(t))
+				_left_on_purpose.erase(int(t))
+			_waiting.clear()
+			_asked = false
+			_wait_left = -1.0
+			_tell_decided("%s ended the game." % who)
+			finish.call(who)
 		"save":
 			if not save_for_later.is_valid():
 				return
 			var save := save_for_later
+			for t in _waiting:
+				if _left_on_purpose.has(int(t)):
+					away.erase(int(t)) # they left: the saved game isn't kept waiting for them
+					_left_on_purpose.erase(int(t))
 			_waiting.clear()
 			_asked = false
 			_wait_left = -1.0
@@ -436,7 +510,11 @@ func _tell_decided(text: String) -> void:
 	decision_made.emit(text)
 
 @rpc("authority", "call_remote", "reliable")
-func _rpc_decide(names: Variant, can_save: Variant) -> void:
+func _rpc_decide(names: Variant, can_save: Variant, info: Variant = {}) -> void:
+	decision_info = {}
+	if info is Dictionary:
+		decision_info = {"first": bool(info.get("first", false)), "gone": "left the game" if str(info.get("gone", "")) == "left the game" else "lost the connection",
+			"secs": clampi(int(info.get("secs", 30)), 0, 3600)}
 	decision_asked.emit(clean_chat(str(names)).left(80), bool(can_save))
 
 @rpc("authority", "call_remote", "reliable")
@@ -457,6 +535,20 @@ func _host_save_for_later(who: String) -> void:
 			return
 		leave()
 		GameConfig.menu_notice = "Saved for later: Continue Online Match picks it up again."
+		get_tree().change_scene_to_file("res://scenes/Menu.tscn"))
+
+## A player's hosted game, ended: nothing is saved (and the online match
+## saved after earlier games is dropped too). The friends are told, then the
+## host goes back to the menu.
+func _host_end_game(who: String) -> void:
+	GameConfig.delete_save(GameConfig.online_save_path)
+	for id in guests.keys():
+		kick(int(id), "%s ended the game." % who)
+	get_tree().create_timer(1.5).timeout.connect(func() -> void:
+		if role != Role.HOST or dedicated:
+			return
+		leave()
+		GameConfig.menu_notice = "%s ended the game." % who
 		get_tree().change_scene_to_file("res://scenes/Menu.tscn"))
 
 # --- getting back in after the connection drops (guest) ---------------------
@@ -653,10 +745,26 @@ func all_seats_ready() -> bool:
 ## game can start without waiting for more friends.
 func fill_open_seats() -> void:
 	var model := GameConfig.computer_counts()
+	var held := owners_missing()
 	for t in open_seats():
+		if held.has(t):
+			continue # a saved game's crew: kept for the player who sailed it
 		GameConfig.controllers[t] = GameConfig.Ctrl.COMPUTER
 		GameConfig.team_counts[t] = model.duplicate()
 	seats_changed.emit()
+
+## A saved game reopened, before it sets sail: the crews whose players
+## haven't come back yet. They're kept for them (nobody else may take them,
+## and the computer doesn't fill them), so the game waits for the right
+## players. Empty otherwise.
+func owners_missing() -> Array[int]:
+	var out: Array[int] = []
+	if not resuming or match_started:
+		return out
+	for t in open_seats():
+		if str(GameConfig.seat_owners.get(t, "")) != "":
+			out.append(int(t))
+	return out
 
 # --- lobby -----------------------------------------------------------------
 
@@ -693,6 +801,8 @@ func _legacy_admit(id: int) -> void:
 func _full_reason() -> String:
 	if match_started:
 		return "A game is already under way there. Try again when it's over."
+	if resuming and not owners_missing().is_empty():
+		return "That's a saved game, waiting for the players who sailed it to come back."
 	return "Every crew there is taken."
 
 func _admit(id: int) -> void:
@@ -749,6 +859,8 @@ func _seat_for(id: int) -> int:
 	for t in seats:
 		if not GameConfig.seat_owners.has(t):
 			return t
+	if resuming:
+		return -1 # every free crew is kept for the player who sailed it
 	return seats[0]
 
 ## Crews players can sail in this match (the rest are the computer's for good).
@@ -851,8 +963,10 @@ func _rpc_rejoin(cfg: Dictionary) -> void:
 
 func _on_peer_disconnected(id: int) -> void:
 	var name := updater.name_of(id)
-	# Leaving on purpose, or sent away: nobody waits for them.
-	var quit := _quitting.has(id) or _leaving.has(id)
+	# Sent away by us: nobody waits for them. Leaving on purpose: waited for
+	# a while like a dropped connection (they may have tapped out by mistake).
+	var kicked := _leaving.has(id)
+	var quit := _quitting.has(id) or kicked
 	updater.peer_gone(id)
 	_rate.erase(id)
 	_leaving.erase(id)
@@ -866,18 +980,26 @@ func _on_peer_disconnected(id: int) -> void:
 	_chosen.erase(team)
 	if match_started:
 		var owner := str(GameConfig.seat_owners.get(team, ""))
-		if owner != "" and not quit:
-			away[team] = owner # lost their connection: theirs again if they come back
+		if owner != "" and not kicked:
+			# Lost their connection, or left mid-game: theirs again if they come
+			# back. Mid-game, with others still playing, everyone waits a while
+			# for them (a couple of minutes) before the computer takes over.
+			away[team] = owner
 			if wait_seconds > 0.0 and _game_on() and _people_left() > 0:
-				# Mid-game, with others still playing: everyone waits for them.
+				if quit:
+					_left_on_purpose[team] = true # (they said goodbye)
+				else:
+					_left_on_purpose.erase(team)
 				_waiting[team] = name if name != "" else GameConfig.team_name(team)
 				_wait_left = wait_seconds
 				_shown_secs = -1
 				if _asked:
-					_asked = false
 					_tell_decided("") # a choice being asked about someone else: asked again, with them too
 				guest_waiting.emit(team)
 				seats_changed.emit()
+				# Tell the others at once, and ask them what to do.
+				_ask(_waiting_names(), "left the game" if _waiting.keys().all(func(t: Variant) -> bool: return _left_on_purpose.has(int(t))) else "lost the connection", true)
+				game_server.hold(true, "%s %s." % [_waiting_names(), "left the game" if quit else "lost the connection"])
 				return
 		# Mid-game or between games: the computer sails their crew from now on.
 		GameConfig.controllers[team] = GameConfig.Ctrl.COMPUTER
@@ -1110,6 +1232,7 @@ func _rpc_in_game() -> void:
 		if _waiting.has(team):
 			var back := str(_waiting[team])
 			_waiting.erase(team)
+			_left_on_purpose.erase(team)
 			if _waiting.is_empty():
 				_end_wait("%s is back. Play on!" % back)
 	if game_server:

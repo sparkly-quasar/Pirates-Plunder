@@ -107,7 +107,8 @@ func _ben() -> void:
 	add_child(ender)
 	# A. Ann blips: the game waits for her, then carries on.
 	await _until(func() -> bool: return g.paused, 60.0)
-	_check(g.paused and g.status[1].contains("Waiting for them"), "ben: A. Ann lost her connection; the game waits for her: %s" % g.status[1])
+	_check(g.paused and g.status[1].contains("lost the connection"), "ben: A. Ann lost her connection; the game waits for her: %s" % g.status[1])
+	_check(_asked >= 1, "ben: A. and he's asked at once what to do")
 	await _until(func() -> bool: return not g.paused, 20.0)
 	_check(g.ctrl[0] == F, "ben: A. she's back and the game carries on, her crew still hers")
 	# B. His connection hangs; a new one takes over.
@@ -120,9 +121,9 @@ func _ben() -> void:
 	_check(GameConfig.my_team == 1 and g.ctrl[1] == F, "ben: B. the new connection takes his crew over from the old one")
 	ender.paused = false
 	Net.say("back again")
-	# C1. Ann drops and stays away: he's asked, and gives her crew to the computer.
-	await _until(func() -> bool: return _asked >= 1, 40.0)
-	_check(g.paused, "ben: C1. after the wait, he's asked what to do (the game still paused)")
+	# C1. Ann drops and stays away: he's asked at once, and gives her crew to the computer.
+	await _until(func() -> bool: return _asked >= 2, 40.0)
+	_check(g.paused, "ben: C1. she's gone and he's asked what to do (the game still paused)")
 	Net.choose("replace")
 	await _until(func() -> bool: return g.ctrl[0] == C and not g.paused, 20.0)
 	_check(g.ctrl[0] == C and _decided.contains("gave Ann's crew to the computer"), "ben: C1. the computer sails Ann's crew: %s" % _decided)
@@ -130,11 +131,11 @@ func _ben() -> void:
 	_check(true, "ben: C1. Ann came back and took her crew back")
 	Net.say("welcome back")
 	# C2. She drops again: he waits once more, then saves the game for later.
-	await _until(func() -> bool: return _asked >= 2, 40.0)
+	await _until(func() -> bool: return _asked >= 3, 40.0)
 	Net.choose("wait")
 	await _until(func() -> bool: return _decided.contains("keep waiting"), 10.0)
 	_check(g.paused, "ben: C2. he chose to keep waiting: %s" % _decided)
-	await _until(func() -> bool: return _asked >= 3, 40.0)
+	await _until(func() -> bool: return _asked >= 4, 40.0)
 	Net.choose("save")
 	await _until(func() -> bool: return Net.refusal != "", 20.0)
 	_check(Net.refusal.contains("saved the game for later"), "ben: C2. he saved it for later, and was sent away: %s" % Net.refusal)
@@ -147,9 +148,13 @@ func _ben() -> void:
 	ender.paused = false
 	await _until(func() -> bool: return _heard("Ann", "continued"), 30.0)
 	Net.say("aye")
-	# E. Ann leaves on purpose: the computer takes her crew straight away.
-	await _until(func() -> bool: return g.ctrl[0] == C, 40.0)
-	_check(not g.paused, "ben: E. Ann left; the computer sails her crew, no waiting")
+	# E. Ann leaves on purpose: he's asked too (she may come back); he
+	# carries on with the computer sailing her crew.
+	await _until(func() -> bool: return g.paused and g.status[1].contains("left the game"), 40.0)
+	_check(g.paused and g.status[1].contains("left the game"), "ben: E. Ann left the game; he's asked what to do: %s" % g.status[1])
+	Net.choose("replace")
+	await _until(func() -> bool: return g.ctrl[0] == C and not g.paused, 20.0)
+	_check(g.ctrl[0] == C and not g.paused, "ben: E. the computer sails her crew, and the game goes on")
 	# F. Alone, he loses his connection; his copy gets him back in.
 	await get_tree().create_timer(1.0).timeout
 	Net.multiplayer.multiplayer_peer.close()

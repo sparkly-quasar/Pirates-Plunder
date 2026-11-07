@@ -130,7 +130,7 @@ suits Docker. A value on the command line wins over the environment.
 | `choose-seconds` | 300 | How long a player has to choose a crew in the lobby. |
 | `join-seconds` | 120 | How long a copy can stay connected without a seat (a wrong version, for example), unless it is downloading an update from the server. |
 | `load-seconds` | 90 | How long everyone has to load the island. The computer replaces anyone slower. |
-| `rejoin-seconds` | 120 | When a player loses their connection mid-game, how long the game waits, paused, for them to come back before asking the others what to do. 0 means the computer takes over their crew at once. A player who leaves on purpose isn't waited for. |
+| `rejoin-seconds` | 120 | When a player loses their connection or leaves mid-game, the others are asked at once what to do (carry on with the computer sailing that crew, wait, end the game with nothing kept, or save it for later), and the game waits, paused, for this long. If nobody answers by then they're asked once more, and 30 seconds later the computer takes over by itself. 0 means the computer takes over their crew at once. |
 | `ready-seconds` | 300 | Time between games. After that the next island starts even if someone is still coaching, and their unspent sessions carry over. 0 means wait for everyone. |
 | `downloads` | (beside it) | A folder of release downloads, so older copies can update themselves from the server. By default, the `downloads` folder next to the server, which `package.sh` fills. See below. |
 | `saves` | user://server-saves | The folder for saved games (see Saved games, below); `-` keeps none. Run from source, `user://` is Godot's data folder for the game (on Linux `~/.local/share/godot/app_userdata/Pirates Plunder/`). |
@@ -570,7 +570,14 @@ and when everyone has gone, so a restart or an update loses almost nothing.
 A saved game belongs to the players who played it. Each player's server list
 shows their own (up to three, newest first, with when and who: "Game 2,
 turn 5, with Ann and Ben"), and any of them can **Continue** one while the
-server is free; the others come back into their own crews. The server keeps
+server is free; the others come back into their own crews. A reopened saved
+game waits for the players who sailed it: their crews are kept for them
+(nobody else can take one, and the computer doesn't fill them), and it sets
+sail once they're all back. **Delete** (press
+it twice to be sure) takes one off that player's list, at any time: if the
+others who played it still have it, it stays for them (the computer would
+sail the crew of whoever deleted it), and when the last of them deletes it,
+the file goes. Only someone who played a game can delete it. The server keeps
 each player's three most recent saved games and deletes older ones, and any
 older than `save-days`. To clear them all, stop the server and empty the
 folder. A `campaign.cfg` from before 0.10 is kept as one more saved game.

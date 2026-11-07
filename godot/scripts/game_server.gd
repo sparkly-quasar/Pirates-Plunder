@@ -845,6 +845,7 @@ func load_state(d: Dictionary) -> void:
 	var rev: Array = d.get("revealed", [])
 	for t in mini(rev.size(), team_count):
 		revealed[t] = _unpack(rev[t])
+	_forget_views()
 	for t in _teams():
 		if _members(t).is_empty():
 			_out[t] = true
@@ -1549,6 +1550,23 @@ func _end_dig(c: Character) -> void:
 			return
 		announce(c.team, "Treasure!")
 		return
+	# Beside an X whose chest another crew has already dug up (and no other X
+	# here still has one): say so, and their flag goes up on it for this side.
+	var taken_by := -1
+	var still_here := false
+	for m in x_markers:
+		var gap: Vector2i = (m - cell).abs()
+		if maxi(gap.x, gap.y) > 1:
+			continue
+		if _marker_has_chest(m):
+			still_here = true
+		elif _finder_of.has(m) and not allies(int(_finder_of[m]), c.team):
+			taken_by = int(_finder_of[m])
+			_spot_flag(c.team, m)
+	if taken_by >= 0 and not still_here:
+		fog_changed.emit()
+		announce(c.team, "Nothing here, and nothing left by this X: the %s dug its chest up already." % TEAM_NAMES[taken_by])
+		return
 	announce(c.team, "Nothing here!")
 
 ## A saved game's flags: per crew, the X's it found, and the other crews'
@@ -1844,11 +1862,20 @@ func hold(on: bool, text := "") -> void:
 func _refresh_vision() -> void:
 	if not is_authority:
 		return # a guest's fog and sightings come only from the host, for its own crew
-	# In 2v2 what a crew sees, its partner sees too.
+	# In 2v2 what a crew sees, its partner sees too. Only someone who has moved
+	# or changed stance since last time can see anything new (the island never
+	# changes), so only their view is worked out again: with thirty-odd sailors
+	# that's the difference between a smooth game and a slideshow on a phone.
+	if sides != _views_sides:
+		_forget_views() # who's partnered with whom changed: share everyone's view again
+		_views_sides = sides.duplicate()
 	for t in _teams():
 		for c in _members(t):
+			var view := _view_of(c)
+			if view.is_empty():
+				continue # nothing new to reveal
 			var scout := c.stats.kind == CharacterStats.Kind.SCOUT and not _finder_of.is_empty()
-			for cell in grid.visible_from(c.cell, c.vision_points()):
+			for cell in view:
 				for o in _teams():
 					if allies(o, t):
 						revealed[o][cell] = true
@@ -1856,7 +1883,7 @@ func _refresh_vision() -> void:
 					_spot_flag(t, cell) # only a Scout notices another crew's flag
 	if not two_teams:
 		return
-	var sight := {} # viewer id -> sight costs, computed once per refresh
+	var sight := _sight_cache # viewer id -> [cell, budget, sight costs], kept while they stand still
 	for t in _teams():
 		var spotted := {}
 		for e in characters:
@@ -1866,6 +1893,26 @@ func _refresh_vision() -> void:
 				spotted[e.id] = true # a partner's people are always in sight
 		seen[t] = spotted
 	_mark()
+
+var _view_cache := {}  # character id -> [cell, vision points] last revealed from
+var _views_sides: Array = [] # the sides those views were shared out by
+var _sight_cache := {} # character id -> [cell, budget, sight costs]
+
+## The squares `c` sees, if they're somewhere new (or standing differently)
+## since their view was last revealed; else [] (they've nothing new to show).
+func _view_of(c: Character) -> Array:
+	var points := c.vision_points()
+	var last: Array = _view_cache.get(c.id, [])
+	if not last.is_empty() and last[0] == c.cell and is_equal_approx(float(last[1]), points):
+		return []
+	_view_cache[c.id] = [c.cell, points]
+	return grid.visible_from(c.cell, points)
+
+## Forget the remembered views (the fog was put back from a save, say), so the
+## next refresh works everyone's out afresh.
+func _forget_views() -> void:
+	_view_cache.clear()
+	_sight_cache.clear()
 
 ## Can anyone on `team`'s side see `target`? Opponents next to you are always
 ## seen, and so is anyone running two squares away (DESIGN_REFERENCE.md §5).
@@ -1884,9 +1931,12 @@ func _spotted(team: int, target: Character, sight: Dictionary) -> bool:
 			return true
 		if d <= 2 and (target.stance == Character.Stance.RUNNING or target.moving):
 			return true
-		if not sight.has(m.id):
-			sight[m.id] = grid.sight_costs(m.cell, m.vision_points() * Combat.MAX_SPOT_FACTOR)
-		var costs: Dictionary = sight[m.id]
+		var budget := m.vision_points() * Combat.MAX_SPOT_FACTOR
+		var kept: Array = sight.get(m.id, [])
+		if kept.is_empty() or kept[0] != m.cell or not is_equal_approx(float(kept[1]), budget):
+			kept = [m.cell, budget, grid.sight_costs(m.cell, budget)]
+			sight[m.id] = kept
+		var costs: Dictionary = kept[2]
 		if costs.has(target.cell) and float(costs[target.cell]) <= m.vision_points() * factor:
 			return true
 	return false

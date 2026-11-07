@@ -1144,7 +1144,7 @@ func _build_decision_panel(layer: CanvasLayer, view: Vector2) -> void:
 	decision_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	decision_text.custom_minimum_size = Vector2(580, 0)
 	box.add_child(decision_text)
-	for pair in [["Give Their Crew to the Computer", "replace"], ["Keep Waiting", "wait"], ["Save the Game for Later", "save"]]:
+	for pair in [["Carry On with the Computer", "replace"], ["Wait for Them", "wait"], ["End the Game", "end"], ["Save the Game for Later", "save"]]:
 		var b := Button.new()
 		b.text = pair[0]
 		b.custom_minimum_size = Vector2(0, 44)
@@ -1169,10 +1169,17 @@ func _build_decision_panel(layer: CanvasLayer, view: Vector2) -> void:
 func _on_decision_asked(names: String, can_save: bool) -> void:
 	if Net.is_dedicated_host() or decision_panel == null:
 		return # a server has nobody at the screen; its players choose
-	decision_text.text = "%s lost the connection and hasn't come back.\nWhat now? (Whoever answers first decides.)\nThe computer can sail their crew, and they can still take it back if they return." % names
+	var info: Dictionary = Net.decision_info
+	var gone := str(info.get("gone", "lost the connection"))
+	var secs := int(info.get("secs", 30))
+	var when := ("%d minute%s" % [secs / 60, "" if secs / 60 == 1 else "s"]) if secs >= 60 and secs % 60 == 0 else "%d seconds" % secs
+	if bool(info.get("first", false)):
+		decision_text.text = "%s %s.\nCarry on with the computer sailing their crew, wait for them, or end the game? (Whoever answers first decides.)\nIf nobody chooses, the computer takes over in %s. They can take their crew back if they return." % [names, gone, when]
+	else:
+		decision_text.text = "%s %s and hasn't come back.\nWhat now? (Whoever answers first decides.)\nIf nobody chooses, the computer takes over in %s. They can still take their crew back if they return." % [names, gone, when]
 	for b in decision_buttons:
 		b.disabled = false
-	decision_buttons[2].visible = can_save
+	decision_buttons[3].visible = can_save
 	decision_panel.visible = true
 
 func _on_decision_made(text: String) -> void:
