@@ -1314,6 +1314,30 @@ func _test_campaign() -> void:
 	_check(runner_c.energy > 10.0 and runner_c.energy <= runner_c.stats.max_energy() + 0.01, "energy: resting fills it up to that tank, no further")
 	_free_game(game)
 
+	# A tired landing (every regular game): half a tank ashore, and no rest
+	# until every crew has moved once, so moving first can't win it outright.
+	g = TerrainGrid.new(4242)
+	game = _computer_game(g)
+	game.land_tired()
+	runner_c = game._members(N)[2]
+	var pirate_c: Character = game._members(P)[2]
+	_check(is_equal_approx(runner_c.energy, runner_c.stats.max_energy() * GameServer.LANDING_ENERGY)
+		and is_equal_approx(pirate_c.energy, pirate_c.stats.max_energy() * GameServer.LANDING_ENERGY),
+		"landing: every crew comes ashore with half its tank (%d)" % roundi(runner_c.energy))
+	var landed := pirate_c.energy
+	game._pass_turn(N)
+	_check(game.current_team == P and is_equal_approx(pirate_c.energy, landed), "landing: the crew moving second doesn't rest before its first move")
+	game._pass_turn(P)
+	_check(game.turn == 2 and runner_c.energy > runner_c.stats.max_energy() * GameServer.LANDING_ENERGY, "landing: from the second round everyone rests as usual")
+	_free_game(game)
+	g = TerrainGrid.new(4242)
+	game = _computer_game(g)
+	pirate_c = game._members(P)[2]
+	pirate_c.energy = 10.0
+	game._pass_turn(N)
+	_check(pirate_c.energy > 10.0, "landing: campaign islands and the tutorial (no tired landing) rest from the start as before")
+	_free_game(game)
+
 	# A flag on the X once your crew digs up its chest, for your side only.
 	g = TerrainGrid.new(4242)
 	game = _computer_game(g)

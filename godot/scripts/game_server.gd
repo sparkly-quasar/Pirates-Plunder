@@ -188,6 +188,13 @@ var unseen_pace := 1.0
 ## Share of stamina each team recovers at the start of its turn. Easy computer
 ## pirates get two-thirds, as the original's easier pirates had less energy.
 var rest_scale := [1.0, 1.0, 1.0, 1.0]
+## Rowing ashore is hard work: in a regular game every crew lands with this
+## share of its energy (land_tired), and nobody rests until every crew has
+## had its first turn. Otherwise whoever moved first could dig up and carry
+## home enough chests to win before a rival had moved at all (a crew of
+## Runners, with their big tanks, nearly always could on a short island).
+const LANDING_ENERGY := 0.5
+var tired_landing := false
 var rng := RandomNumberGenerator.new()
 var _dirty := false
 ## Host: the fog last sent to each guest's crew, so it only goes again when it
@@ -728,8 +735,9 @@ func _pass_turn(team: int) -> void:
 			_hotseat_view = current_team
 	else:
 		turn += 1
-	for c in _members(current_team):
-		c.energy = minf(c.energy + c.stats.stamina * float(rest_scale[current_team]) * rest_bonus(c), c.stats.max_energy())
+	if rests_now():
+		for c in _members(current_team):
+			c.energy = minf(c.energy + c.stats.stamina * float(rest_scale[current_team]) * rest_bonus(c), c.stats.max_energy())
 	reset_turn_clock()
 	turn_changed.emit()
 	_refresh_vision()
@@ -743,6 +751,20 @@ func _pass_turn(team: int) -> void:
 				announce(t, "The %s are moving. Wait for your turn." % TEAM_NAMES[current_team])
 	else:
 		announce(team, "Turn %d — everyone rested." % turn)
+
+## Every crew comes ashore with LANDING_ENERGY of its tank, and the first
+## round passes without rest (see tired_landing). A new game only: a resumed
+## one has its energy back from the save.
+func land_tired() -> void:
+	tired_landing = true
+	for c in characters:
+		c.energy = c.stats.max_energy() * LANDING_ENERGY
+
+## Whether the crew whose turn it now is gets its rest: not in the first
+## round of a tired landing, so the crews that move second don't start
+## fresher than the one that moved first.
+func rests_now() -> bool:
+	return not (tired_landing and two_teams and turn <= 1)
 
 ## The next crew after `team` that still has anyone on the island.
 func _next_team(team: int) -> int:

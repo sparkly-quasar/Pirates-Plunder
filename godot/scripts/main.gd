@@ -94,6 +94,11 @@ func _ready() -> void:
 	server.turn_limit = float(GameConfig.turn_seconds) if GameConfig.mode in [GameConfig.Mode.HOST, GameConfig.Mode.SERVER, GameConfig.Mode.HOTSEAT] else 0.0
 	add_child(server)
 	server.setup(grid, characters)
+	# Campaign islands and the tutorial are tuned for crews that land fresh.
+	if not GameConfig.in_campaign() and not GameConfig.tutorial:
+		server.tired_landing = true
+		if not GameConfig.resumed:
+			server.land_tired()
 	# A guest only rebuilds the people of a resumed game; the rest comes from
 	# the host's snapshots.
 	if GameConfig.in_campaign():
@@ -854,6 +859,8 @@ func _update_info() -> void:
 	var stance_name: String = ["Standing", "Running", "Crawling"][c.stance]
 	# What they get back when their crew's turn comes round: stamina.
 	var rest := c.stats.stamina * float(server.rest_scale[c.team]) * server.rest_bonus(c)
+	if server.tired_landing and server.two_teams and server.turn <= 1 and server._round_pos(c.team) > server._round_pos(server.current_team):
+		rest = 0.0 # yet to move in the first round, when nobody rests
 	var storm := c.team == v and _storm_island()
 	if server.rest_bonus(c) > 1.0:
 		storm = false
