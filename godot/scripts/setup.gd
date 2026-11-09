@@ -59,7 +59,7 @@ func _ready() -> void:
 	if _guest():
 		target = GameConfig.team_target
 	elif GameConfig.uses_crew():
-		# Your crew grows by a recruit after each win: everyone lands.
+		# Your saved crew lands as it is (topped up to ten while it's smaller).
 		GameConfig.fit_counts_to_crew()
 		target = GameConfig.team_size(GameConfig.nav_counts)
 	_build()

@@ -101,16 +101,23 @@ func _play_for(results: Array) -> void:
 	AudioManager.play(AudioManifest.COACH_SUCCESS if took else AudioManifest.COACH_FAIL)
 
 func _rename(team: int, index: int, wanted: String) -> void:
+	var why := ""
 	if solo:
 		var st := solo_people[index]
+		why = GameConfig.rename_refusal(st.person_name, wanted)
 		st.person_name = GameConfig.rename(st.person_name, wanted)
 	elif GameConfig.mode == GameConfig.Mode.GUEST:
 		Net.send_rename(index, wanted)
 		return
 	else:
+		var d: Dictionary = GameConfig.match_crews[team][index]
+		why = GameConfig.rename_refusal(str(d.name), wanted, GameConfig.match_crews[team])
 		GameConfig.rename_in_match(team, index, wanted)
 		Net.send_match()
 	_refresh()
+	if why != "":
+		# Said after the refresh, which writes its own line.
+		status_label.text = why
 
 # --- layout ----------------------------------------------------------------
 
@@ -316,6 +323,7 @@ func _bring_back(person: String, class_title: String) -> void:
 	status_label.text = "%s the %s joins the crew sailing for the Star Chart." % [person, class_title]
 
 func _take_recruit(kind: int, wanted: String) -> void:
+	var asked := wanted.strip_edges().left(GameConfig.MAX_NAME_LENGTH)
 	var st := GameConfig.recruit(kind, wanted)
 	if GameConfig.in_campaign():
 		Campaign.add_to_party(st.person_name)
@@ -324,6 +332,8 @@ func _take_recruit(kind: int, wanted: String) -> void:
 	_build_panels()
 	_show_coaching()
 	status_label.text = "%s the %s joins the crew." % [st.person_name, st.class_name_]
+	if asked != "" and asked != st.person_name:
+		status_label.text += " (There's already a %s in your crew, so the new one is %s. You can rename them below.)" % [asked, st.person_name]
 
 func _show_coaching() -> void:
 	if _recruit_box:

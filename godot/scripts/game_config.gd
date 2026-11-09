@@ -559,6 +559,19 @@ func add_careers(people: Array) -> void:
 
 const MAX_NAME_LENGTH := 16
 
+## Why rename(old_name, wanted) would keep the old name, said for the
+## player, or "" if it would take (or nothing was asked for).
+func rename_refusal(old_name: String, wanted: String, people: Array = crew) -> String:
+	var name := wanted.strip_edges().left(MAX_NAME_LENGTH)
+	if name == old_name:
+		return ""
+	if name == "":
+		return "A sailor needs a name: %s keeps theirs." % old_name
+	for d in people:
+		if str(d.name) == name:
+			return "There's already a %s in your crew (maybe ashore this time), so %s keeps their name. Names tell sailors apart between games." % [name, old_name]
+	return ""
+
 ## Gives a crew member a name of your choosing. Names identify people between
 ## games, so a blank or already-taken name is refused. Returns the name they
 ## end up with.
@@ -596,17 +609,29 @@ func recruit(kind: int, wanted := "") -> CharacterStats:
 	recruit_due = false
 	return st
 
-## Single player: when the saved crew has grown past the usual ten, everyone
-## in it lands (up to MAX_TEAM_SIZE), unless the roster was already changed.
-## Returns whether it changed the counts.
+## Single player: the saved crew lands as it is, so the same sailors sail
+## every time: its own mix of classes (up to MAX_TEAM_SIZE), topped up to the
+## usual ten with new recruits while it's smaller. Without this the island
+## asked for the default two of each class, left veterans of a class you have
+## more of ashore and made up strangers for a class you have fewer of, who
+## then joined the crew for good. Only while the roster hasn't been changed
+## by hand. Returns whether it changed the counts.
 func fit_counts_to_crew() -> bool:
-	if not uses_crew() or crew.size() <= team_size(nav_counts) or nav_counts != default_counts():
+	var regulars := ordered_crew()
+	if not uses_crew() or regulars.is_empty() or nav_counts != default_counts():
 		return false
 	var counts := {}
 	for kind in CharacterStats.Kind.values():
 		counts[kind] = 0
-	for i in mini(crew.size(), MAX_TEAM_SIZE):
-		counts[int(crew[i].kind)] += 1
+	for i in mini(regulars.size(), MAX_TEAM_SIZE):
+		counts[int(regulars[i].kind)] += 1
+	var short := DEFAULT_TEAM_SIZE - team_size(counts)
+	if short > 0:
+		var extra := balanced_counts(short)
+		for kind in extra:
+			counts[kind] += int(extra[kind])
+	if counts == nav_counts:
+		return false
 	nav_counts = counts
 	team_target = team_size(counts)
 	return true

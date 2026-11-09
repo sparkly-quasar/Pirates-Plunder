@@ -3250,6 +3250,43 @@ func _test_recruits() -> void:
 	GameConfig.fit_counts_to_crew()
 	_check(GameConfig.team_size(GameConfig.nav_counts) == GameConfig.MAX_TEAM_SIZE and GameConfig.build_roster().size() == 16,
 		"crews: never more than sixteen land")
+
+	# A crew of ten that isn't two of each (three Diggers, no Swordsmen):
+	# the same ten land, nobody is left ashore, no strangers join.
+	var K := CharacterStats.Kind
+	GameConfig.crew = []
+	var ten := [K.DIGGER, K.DIGGER, K.DIGGER, K.SCOUT, K.SCOUT, K.RUNNER, K.RUNNER, K.FIGHTER, K.FIGHTER, K.FIGHTER]
+	for i in ten.size():
+		GameConfig.crew.append(CharacterStats.make(ten[i], "Ten%d" % i).to_dict())
+	for game in 2:
+		GameConfig.reset()
+		GameConfig.mode = GameConfig.Mode.COMPUTER
+		GameConfig.fit_counts_to_crew()
+		var roster := GameConfig.build_roster()
+		var party: Array = []
+		for r in roster:
+			var p := CharacterStats.make(r[0], r[1])
+			party.append(p)
+		GameConfig.remember(party)
+	var names_now: Array = GameConfig.crew.map(func(d: Dictionary) -> String: return str(d.name))
+	_check(GameConfig.crew.size() == 10 and names_now.all(func(n: String) -> bool: return n.begins_with("Ten"))
+		and int(GameConfig.nav_counts[K.DIGGER]) == 3 and int(GameConfig.nav_counts[K.SWORDSMAN]) == 0,
+		"crews: a saved crew of ten lands as it is, game after game (no strangers, nobody left ashore)")
+	# A small crew lands whole, topped up to ten.
+	GameConfig.crew = []
+	for i in 4:
+		GameConfig.crew.append(CharacterStats.make(K.DIGGER, "Small%d" % i).to_dict())
+	GameConfig.reset()
+	GameConfig.mode = GameConfig.Mode.COMPUTER
+	GameConfig.fit_counts_to_crew()
+	var small_roster: Array = GameConfig.build_roster().map(func(r: Array) -> String: return r[1])
+	_check(small_roster.size() == 10 and range(4).all(func(i: int) -> bool: return small_roster.has("Small%d" % i)),
+		"crews: a crew of four lands whole, with six new recruits to make ten")
+	# A rename that can't take says why.
+	_check(GameConfig.rename_refusal("Small0", "Small1") != "" and GameConfig.rename("Small0", "Small1") == "Small0",
+		"rename: a name someone in the crew already has is refused, and the player is told why")
+	_check(GameConfig.rename_refusal("Small0", "  ") != "" and GameConfig.rename_refusal("Small0", "Anne Bonny") == "",
+		"rename: a blank name is explained too; a free name has nothing to explain")
 	GameConfig.crew = crew_before
 	GameConfig.save_crew()
 	GameConfig.reset()
