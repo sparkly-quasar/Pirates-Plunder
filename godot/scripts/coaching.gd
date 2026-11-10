@@ -141,10 +141,7 @@ func _dismiss(index: int, button: Button) -> void:
 # --- layout ----------------------------------------------------------------
 
 func _build() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.09, 0.12, 0.16)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	UiTheme.dress(self)
 
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -155,8 +152,7 @@ func _build() -> void:
 	root.offset_bottom = -20
 	add_child(root)
 
-	var title := _label("YOUR CREW" if viewing else "COACHING", 32)
-	title.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
+	var title := UiTheme.heading(_label("YOUR CREW" if viewing else "COACHING", 38))
 	root.add_child(title)
 	var lead := "Your crew won! Coach them before the next expedition." if solo \
 		else "Coach your crew for the next game. Coaching lasts for the rest of this match."
@@ -232,7 +228,7 @@ func _build() -> void:
 		bottom.add_child(fresh)
 		root.add_child(bottom)
 		return
-	next_button = Button.new()
+	next_button = UiTheme.primary(Button.new())
 	next_button.text = "Next Expedition" if solo else "Next Game"
 	if GameConfig.in_campaign():
 		next_button.text = "On to the Ending" if GameConfig.ending_due else "Back to the Campaign"

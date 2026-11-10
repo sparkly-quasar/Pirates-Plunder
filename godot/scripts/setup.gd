@@ -79,10 +79,7 @@ func _on_host_lost() -> void:
 	get_tree().change_scene_to_file("res://scenes/Menu.tscn")
 
 func _build() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.09, 0.12, 0.16)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	UiTheme.dress(self)
 
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -93,7 +90,9 @@ func _build() -> void:
 	root.offset_bottom = -18
 	add_child(root)
 
-	root.add_child(_title("PIRATES PLUNDER", 34))
+	var name_l := _label("Pirates Plunder", 50)
+	name_l.theme_type_variation = UiTheme.TITLE
+	root.add_child(name_l)
 	var sub := _label({
 		GameConfig.Mode.SOLO: "Choose your island and your landing party.",
 		GameConfig.Mode.COMPUTER: "Choose the island, how many rival crews, and your NAVS. The computer's crews land with the same makeup.",
@@ -132,7 +131,7 @@ func _build() -> void:
 		Net.leave()
 		get_tree().change_scene_to_file("res://scenes/ServerBrowser.tscn" if to_list else "res://scenes/Menu.tscn"))
 	bottom.add_child(back)
-	start_button = Button.new()
+	start_button = UiTheme.primary(Button.new())
 	start_button.text = "Start Expedition"
 	start_button.custom_minimum_size = Vector2(0, 46)
 	start_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -631,8 +630,7 @@ func _on_start() -> void:
 # --- small ui helpers ------------------------------------------------------
 
 func _title(text: String, size: int) -> Label:
-	var l := _label(text, size)
-	l.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
+	var l := UiTheme.heading(_label(text, size + 3))
 	return l
 
 func _label(text: String, size: int) -> Label:

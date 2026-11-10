@@ -222,10 +222,9 @@ func _build() -> void:
 	_auto = _button("Coach the rest for me", _auto_pick_rest)
 	_auto.tooltip_text = "Picks for everyone you haven't: attitudes first, then each class's best skill, then spirit."
 	nav.add_child(_auto)
-	_done = _button("Done: see how it goes", func() -> void:
+	_done = UiTheme.primary(_button("Done: see how it goes", func() -> void:
 		if not picks.is_empty():
-			plan_done.emit(picks.duplicate()))
-	_done.add_theme_color_override("font_color", PICKED)
+			plan_done.emit(picks.duplicate())))
 	nav.add_child(_done)
 	add_child(nav)
 

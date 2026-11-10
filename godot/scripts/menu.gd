@@ -55,10 +55,7 @@ func _launch_server() -> void:
 	get_tree().root.add_child.call_deferred(server)
 
 func _build() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.07, 0.10, 0.14)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	UiTheme.dress(self)
 
 	var middle := CenterContainer.new()
 	middle.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -68,8 +65,8 @@ func _build() -> void:
 	centre.add_theme_constant_override("separation", 12)
 	middle.add_child(centre)
 
-	var title := _label("PIRATES PLUNDER", 44)
-	title.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
+	var title := _label("Pirates Plunder", 84)
+	title.theme_type_variation = UiTheme.TITLE
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	centre.add_child(title)
 
@@ -594,9 +591,8 @@ func _add_back() -> void:
 	_pages.add_child(back)
 
 func _heading(text: String) -> Label:
-	var h := _label(text, 26)
+	var h := UiTheme.heading(_label(text, 30))
 	h.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	h.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
 	return h
 
 func _setting_label(text: String) -> Label:
@@ -624,7 +620,7 @@ func _menu_button(title: String, blurb: String, enabled: bool, action: Callable)
 	b.disabled = not enabled
 	b.pressed.connect(action)
 	box.add_child(b)
-	var l := _label(blurb if enabled else blurb + "   (coming next)", 12)
+	var l := _label(blurb if enabled else blurb + "   (coming next)", 13)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	l.modulate = Color(1, 1, 1, 0.55 if enabled else 0.35)

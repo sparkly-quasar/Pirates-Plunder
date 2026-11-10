@@ -42,10 +42,7 @@ var _waited := 0.0
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
-	bg.color = Color(0.07, 0.10, 0.14)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	UiTheme.dress(self)
 
 	var centre := VBoxContainer.new()
 	centre.set_anchors_preset(Control.PRESET_CENTER)
@@ -747,8 +744,7 @@ func _link_row(links: Array) -> Control:
 	return row
 
 func _title(text: String, size: int) -> Label:
-	var l := _label(text, size)
-	l.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
+	var l := UiTheme.heading(_label(text, size + 3))
 	return l
 
 func _small(text: String) -> Label:

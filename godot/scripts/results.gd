@@ -22,10 +22,7 @@ func _ready() -> void:
 	_build()
 
 func _build() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.09, 0.12, 0.16)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	UiTheme.dress(self)
 
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -37,8 +34,7 @@ func _build() -> void:
 	add_child(root)
 
 	var winner := int(r.get("winner", -1))
-	var title := _label(_headline(winner), 38)
-	title.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
+	var title := UiTheme.heading(_label(_headline(winner), 42))
 	root.add_child(title)
 	var reason := str(r.get("reason", ""))
 	if reason != "":
@@ -87,7 +83,7 @@ func _build() -> void:
 		Net.leave()
 		get_tree().change_scene_to_file("res://scenes/Menu.tscn"))
 	bottom.add_child(menu)
-	var next := Button.new()
+	var next := UiTheme.primary(Button.new())
 	next.custom_minimum_size = Vector2(0, 48)
 	next.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	next.add_theme_font_size_override("font_size", 21)

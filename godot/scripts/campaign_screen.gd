@@ -45,10 +45,7 @@ func _ready() -> void:
 	select(first)
 
 func _build() -> void:
-	var bg := ColorRect.new()
-	bg.color = Color(0.09, 0.12, 0.16)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	UiTheme.dress(self)
 
 	var root := VBoxContainer.new()
 	root.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -61,8 +58,7 @@ func _build() -> void:
 
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 14)
-	var title := _label("THE STAR CHART", 32)
-	title.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
+	var title := UiTheme.heading(_label("THE STAR CHART", 38))
 	top.add_child(title)
 	if Campaign.is_captain():
 		top.add_child(CaptainFlag.new(Vector2(30, 20)))
@@ -130,8 +126,7 @@ func _build() -> void:
 	right.add_theme_constant_override("separation", 8)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	columns.add_child(right)
-	heading = _label("", 24)
-	heading.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
+	heading = UiTheme.heading(_label("", 28))
 	right.add_child(heading)
 	story = _label("", 15)
 	story.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -203,7 +198,7 @@ func _build() -> void:
 		ending.custom_minimum_size = Vector2(180, 46)
 		ending.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://scenes/Ending.tscn"))
 		bottom.add_child(ending)
-	sail = Button.new()
+	sail = UiTheme.primary(Button.new())
 	sail.name = "SetSail"
 	sail.custom_minimum_size = Vector2(0, 46)
 	sail.size_flags_horizontal = Control.SIZE_EXPAND_FILL

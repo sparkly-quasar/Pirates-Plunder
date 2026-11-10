@@ -29,10 +29,7 @@ var _update_version := ""
 
 func _ready() -> void:
 	set_anchors_preset(Control.PRESET_FULL_RECT)
-	var bg := ColorRect.new()
-	bg.color = Color(0.07, 0.10, 0.14)
-	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(bg)
+	UiTheme.dress(self)
 
 	var centre := VBoxContainer.new()
 	centre.set_anchors_preset(Control.PRESET_CENTER)
@@ -94,7 +91,7 @@ func _build_host(centre: VBoxContainer) -> void:
 	status_label = _label("Waiting for friends to rejoin. Each gets their own crew back..." if Net.resuming
 		else "Waiting for friends to join...", 18)
 	centre.add_child(status_label)
-	start_now = Button.new()
+	start_now = UiTheme.primary(Button.new())
 	start_now.custom_minimum_size = Vector2(0, 38)
 	start_now.pressed.connect(_on_start_now)
 	centre.add_child(start_now)
@@ -356,8 +353,7 @@ func _link_row(links: Array) -> Control:
 	return row
 
 func _title(text: String) -> Label:
-	var l := _label(text, 30)
-	l.add_theme_color_override("font_color", Color(1.0, 0.87, 0.55))
+	var l := UiTheme.heading(_label(text, 34))
 	return l
 
 func _label(text: String, size: int) -> Label:
