@@ -2513,6 +2513,20 @@ func _test_save_slots_and_crew() -> void:
 	_check(labels.any(func(t: String) -> bool: return t.contains("confidence 12")), "crew: and each one's confidence")
 	view._rename(NAVS_TEAM, 0, "Ishmael")
 	_check(GameConfig.crew.any(func(d: Dictionary) -> bool: return str(d.name) == "Ishmael"), "crew: renaming there renames the saved sailor")
+	# Dismiss: a button on every card, which asks twice.
+	var dismissers := view.find_children("Dismiss", "Button", true, false)
+	var size_before := GameConfig.crew.size()
+	_check(dismissers.size() == size_before, "crew: every sailor's card has a Dismiss button (%d)" % dismissers.size())
+	view._dismiss(0, dismissers[0])
+	_check(GameConfig.crew.size() == size_before and (dismissers[0] as Button).text.contains("Click again") and (dismissers[0] as Button).text.contains("Ishmael"),
+		"crew: the first press only asks: %s" % (dismissers[0] as Button).text)
+	GameConfig.last_party = ["Ishmael"]
+	_check(GameConfig.dismiss("Ishmael") and GameConfig.crew.size() == size_before - 1 and GameConfig.last_party.is_empty()
+		and not GameConfig.crew.any(func(d: Dictionary) -> bool: return str(d.name) == "Ishmael"),
+		"crew: dismissing lets that one sailor go, and nobody else")
+	GameConfig.crew.append(Campaign.make_vega().to_dict())
+	_check(not GameConfig.dismiss(Campaign.make_vega().person_name) and not GameConfig.dismiss("Nobody Here"),
+		"crew: Vega can't be dismissed, nor someone who isn't there")
 	view.queue_free()
 	GameConfig.crew = crew_before
 	GameConfig.save_crew()

@@ -591,6 +591,26 @@ func rename(old_name: String, wanted: String) -> String:
 	save_crew()
 	return name
 
+## Lets one sailor go from the saved crew for good (Your Crew's Dismiss):
+## their training goes with them, and they stop sailing the campaign. Vega
+## can't be dismissed. Returns whether anyone went.
+func dismiss(person: String) -> bool:
+	var i := crew.find_custom(func(d: Dictionary) -> bool: return str(d.name) == person and str(d.get("special", "")) == "")
+	if i < 0:
+		return false
+	crew.remove_at(i)
+	last_party.erase(person)
+	crew_first.erase(person)
+	save_crew()
+	var sailing := false
+	for names in Campaign.data().party:
+		if (names as Array).has(person):
+			(names as Array).erase(person)
+			sailing = true
+	if sailing:
+		Campaign.save()
+	return true
+
 ## Single player: a new sailor of `kind` joins the saved crew, named `wanted`
 ## if that's free (else the next navigator's name), and gets a place on the
 ## next island. Returns them.

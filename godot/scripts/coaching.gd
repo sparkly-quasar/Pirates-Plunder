@@ -24,6 +24,7 @@ const SetupScreen := preload("res://scripts/setup.gd")
 var solo := false
 var viewing := false            # Your Crew: look, rename, nothing to spend
 var _clear_armed := false
+var _dismiss_armed := -1
 var teams: Array = []           # the crews this screen coaches
 var solo_people: Array[CharacterStats] = []
 var rng := RandomNumberGenerator.new()
@@ -119,6 +120,24 @@ func _rename(team: int, index: int, wanted: String) -> void:
 		# Said after the refresh, which writes its own line.
 		status_label.text = why
 
+## Your Crew: the first press arms this card's Dismiss, the second lets the
+## sailor go and draws the page again without them.
+func _dismiss(index: int, button: Button) -> void:
+	var who := solo_people[index].person_name
+	if _dismiss_armed != index:
+		_dismiss_armed = index
+		for team in sections:
+			for row in sections[team].rows:
+				var other: Button = row.panel.find_child("Dismiss", true, false)
+				if other != null:
+					other.text = "Dismiss"
+		button.text = "Click again: let %s go" % who
+		status_label.text = "%s's training would be lost for good. Saved games keep the crew they had." % who
+		return
+	GameConfig.dismiss(who)
+	GameConfig.crew_view = true # this page again, not the coaching screen
+	get_tree().reload_current_scene()
+
 # --- layout ----------------------------------------------------------------
 
 func _build() -> void:
@@ -145,7 +164,7 @@ func _build() -> void:
 	if viewing:
 		lead = ("Everyone who has sailed with you in single player, as they stand now. Winning against the computer earns a round of coaching and a new recruit; confidence grows with every chest dug and fight won." if not solo_people.is_empty()
 			else "Nobody yet. Your NAVS join the crew the first time they land in a single-player game, and keep their training from then on.")
-		how = "\nThe tick on a bar is where that class started; the white line is as far as coaching can take it. Click a name to rename." if not solo_people.is_empty() else ""
+		how = "\nThe tick on a bar is where that class started; the white line is as far as coaching can take it. Click a name to rename; Dismiss lets one sailor go." if not solo_people.is_empty() else ""
 	var intro := _label(lead + how, 13)
 	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	intro.modulate = Color(1, 1, 1, 0.75)
@@ -208,6 +227,7 @@ func _build() -> void:
 				status_label.text = "Everyone's training would be lost. Saved games keep the crew they had."
 				return
 			GameConfig.clear_crew()
+			GameConfig.crew_view = true # this page again, not the coaching screen
 			get_tree().reload_current_scene())
 		bottom.add_child(fresh)
 		root.add_child(bottom)
@@ -425,6 +445,18 @@ func _card(team: int, index: int, st: CharacterStats) -> Dictionary:
 	var attitudes := _label("", 12)
 	attitudes.modulate = Color(1, 1, 1, 0.6)
 	col.add_child(attitudes)
+	if viewing and st.special == "":
+		# Your Crew: let this one sailor go (it asks twice).
+		var go := Button.new()
+		go.name = "Dismiss"
+		go.text = "Dismiss"
+		go.flat = true
+		go.add_theme_font_size_override("font_size", 12)
+		go.size_flags_horizontal = Control.SIZE_SHRINK_END
+		go.modulate = Color(1, 1, 1, 0.7)
+		go.tooltip_text = "Let this sailor go for good. Their training goes with them."
+		go.pressed.connect(func() -> void: _dismiss(index, go))
+		col.add_child(go)
 	return {"panel": panel, "edit": edit, "class": cls, "figure": figure, "bars": bars, "attitudes": attitudes, "career": career}
 
 func _team_colour(team: int) -> Color:
